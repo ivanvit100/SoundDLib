@@ -1,0 +1,62 @@
+<!--
+ -- SoundDLib popup interface
+ -- @author ivanvit
+ -- @version 0.0.1
+-->
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="css/ui.css">
+    </head>
+    <body>
+        <div id="container">
+            <div id="logoHeader">
+                <img id="siteLogo" src="icons/icon48.png" alt="SoundDLib" style="display:block; margin:0 auto;">
+                <span id="historyBtn" title="История загрузок">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                </span>
+            </div>
+            <div id="logoInfo" style="text-align:center; color:#bdbdbd; font-size:12px; margin:6px 0 8px;"></div>
+
+            <div id="error" class="hidden"></div>
+            <div id="success" class="hidden"></div>
+            <div id="view"></div>
+
+            <!-- ffmpeg.wasm -->
+            <script src="lib/ffmpeg.min.js"></script>
+
+            <!-- Browser API adapter -->
+            <script src="core/BrowserApi.js"></script>
+
+            <!-- Core -->
+            <script src="core/EventBus.js"></script>
+            <script src="core/RateLimiter.js"></script>
+            <script src="core/Storage.js"></script>
+            <script src="core/DownloadHistory.js"></script>
+            <script src="core/AudioConverter.js"></script>
+            <script src="core/HlsDownloader.js"></script>
+            <script src="core/SingleTrackManager.js"></script>
+            <script src="core/PlaylistManager.js"></script>
+
+            <!-- Converters -->
+            <script src="converters/ConverterRegistry.js"></script>
+
+            <!-- Services -->
+            <script src="services/ServiceRegistry.js"></script>
+
+            <!-- UI -->
+            <script src="ui/TemplateLoader.js"></script>
+            <script src="ui/HistoryController.js"></script>
+            <script src="ui/SingleTrackController.js"></script>
+            <script src="ui/PlaylistController.js"></script>
+            <script src="ui/PopupController.js"></script>
+
+            <script type="module" src="app.js"></script>
+        </div>
+    </body>
+</html>

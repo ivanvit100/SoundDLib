@@ -1,0 +1,25 @@
+<div id="trackSection">
+    <div id="trackHeader">
+        <img id="cover" alt="Cover" style="display:none;">
+        <div id="description" style="overflow:hidden;"></div>
+    </div>
+
+    <div id="qualityContainer" style="display:none;">
+        <label for="qualitySelector">Качество:</label>
+        <select id="qualitySelector"></select>
+    </div>
+
+    <div id="formatContainer">
+        <label for="formatSelector">Формат:</label>
+        <select id="formatSelector"></select>
+    </div>
+
+    <button id="downloadBtn" disabled>Скачать</button>
+
+    <progress id="progress" max="100" value="0" style="display:none;"></progress>
+    <div id="status"></div>
+
+    <div id="downloadControls" style="display:none;">
+        <button id="stopBtn">Стоп</button>
+    </div>
+</div>

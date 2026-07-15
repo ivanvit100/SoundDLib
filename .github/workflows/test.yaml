@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '24'
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Clean npm cache
+        run: npm cache clean --force
+
+      - name: Remove node_modules and lock
+        run: rm -rf node_modules package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm run test

@@ -1,0 +1,81 @@
+{
+    "manifest_version": 3,
+    "name": "SoundDLib",
+    "version": "0.0.1",
+    "description": "Скачивает треки и плейлисты со Звука в выбранном аудиоформате.",
+    "author": "https://ivanvit.ru",
+    "homepage_url": "https://github.com/ivanvit100/SoundDLib",
+
+    "background": {
+        "scripts": [
+            "core/BrowserApi.js",
+            "core/RateLimiter.js",
+            "core/EventBus.js",
+            "services/ServiceRegistry.js",
+            "background/AudioStore.js",
+            "background/RequestInterceptor.js",
+            "background/MessageRouter.js"
+        ]
+    },
+
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "@sounddlib",
+            "strict_min_version": "128.0"
+        }
+    },
+
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+
+    "permissions": [
+        "activeTab",
+        "tabs",
+        "downloads",
+        "storage",
+        "webRequest",
+        "scripting",
+        "declarativeNetRequest",
+        "declarativeNetRequestWithHostAccess"
+    ],
+
+    "host_permissions": [
+        "https://zvuk.com/*",
+        "https://*.zvuk.com/*"
+    ],
+
+    "content_security_policy": {
+        "extension_pages": "script-src 'self' 'wasm-unsafe-eval' blob:; object-src 'self'"
+    },
+
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+
+    "content_scripts": [
+        {
+            "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"],
+            "js": ["content/AudioInterceptor.js"],
+            "world": "MAIN",
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"],
+            "js": ["content/AudioRelay.js"],
+            "run_at": "document_start"
+        }
+    ],
+
+    "web_accessible_resources": [{
+        "resources": ["lib/ffmpeg-core.js", "lib/ffmpeg-core.wasm", "lib/ffmpeg-core.worker.js"],
+        "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"]
+    }]
+}

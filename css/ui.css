@@ -1,0 +1,340 @@
+body {
+    padding: 15px;
+    font-family: Arial, sans-serif;
+    background-color: #252527;
+    --primary-color: #22c375;
+    --secondary-color: #1aa35e;
+}
+#container {
+    width: 300px;
+    margin: auto;
+}
+
+/* --- Кнопки --- */
+button {
+    width: 100%;
+    padding: 10px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.2s;
+}
+button:hover  { background: var(--secondary-color); }
+button:disabled { background: #939393; cursor: not-allowed; }
+
+/* --- Лейблы --- */
+label {
+    color: #bdbdbd;
+    font-size: 14px;
+}
+
+/* --- Статус --- */
+#status {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #888;
+    word-wrap: break-word;
+    line-height: 1.4;
+    min-height: 18px;
+}
+
+/* --- Прогресс-бар --- */
+#progress, #discoveryBar {
+    margin-top: 10px;
+    width: 100%;
+    height: 20px;
+    border: none;
+    background-color: #939393;
+    border-radius: 4px;
+}
+progress::-webkit-progress-bar  { background: #3d3d3f; border-radius: 4px; }
+progress::-webkit-progress-value { background: var(--primary-color); border-radius: 4px; }
+progress::-moz-progress-bar      { background: var(--primary-color); border-radius: 4px; }
+
+/* --- Обложка / описание --- */
+#cover {
+    display: none;
+    float: left;
+    width: 70px;
+    height: auto;
+    border-radius: 4px;
+    margin-right: 10px;
+    margin-bottom: 4px;
+}
+#trackHeader {
+    overflow: hidden;
+    margin-bottom: 10px;
+    min-height: 40px;
+}
+#description {
+    overflow: hidden;
+    color: #ddd;
+    font-size: 13px;
+    line-height: 1.5;
+}
+#description strong { font-size: 14px; }
+#description small  { color: #aaa; font-size: 12px; }
+
+/* --- Выбор качества и формата --- */
+#qualityContainer, #formatContainer {
+    text-align: center;
+    margin: 10px 0;
+}
+#qualitySelector, #formatSelector {
+    padding: 6px 10px;
+    font-size: 14px;
+    margin-left: 8px;
+    background: #252527;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+}
+#qualitySelector:focus, #qualitySelector:hover,
+#formatSelector:focus, #formatSelector:hover {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 4px var(--primary-color);
+}
+
+/* --- Кнопки управления (пауза / стоп) --- */
+#downloadControls {
+    display: none;
+    gap: 8px;
+    margin-top: 10px;
+}
+#pauseBtn, #stopBtn {
+    padding: 8px;
+    font-size: 14px;
+    background: #252527;
+    border: 2px solid var(--primary-color);
+    color: #fff;
+}
+#pauseBtn:hover, #stopBtn:hover {
+    border-color: var(--secondary-color);
+    background: #252527;
+}
+
+/* --- Список треков (плейлист) --- */
+.track-count {
+    color: #888;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+.track-list {
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    padding-right: 2px;
+}
+.track-list::-webkit-scrollbar       { width: 4px; }
+.track-list::-webkit-scrollbar-track { background: #252527; }
+.track-list::-webkit-scrollbar-thumb { background: #3d3d3f; border-radius: 2px; }
+
+.track-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    transition: background 0.15s;
+}
+.track-item--active {
+    background: rgba(34, 195, 117, 0.15);
+}
+.track-item--done {
+    opacity: 0.45;
+}
+.track-num {
+    color: #666;
+    flex-shrink: 0;
+    width: 22px;
+    text-align: right;
+}
+.track-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.track-title {
+    color: #ddd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.track-artist {
+    color: #888;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- Секция discovery --- */
+#discoverySection {
+    margin: 8px 0;
+}
+#discoveryStatus {
+    color: #bdbdbd;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+/* --- Заголовок (лого + история) --- */
+#logoHeader {
+    position: relative;
+    margin-bottom: 6px;
+}
+#historyBtn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    cursor: pointer;
+    color: #bdbdbd;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+}
+#historyBtn:hover { color: var(--primary-color); }
+
+/* --- Сообщения об ошибке / успехе --- */
+#error, #success {
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+#error   { background: #3d1f1f; color: #f88; border: 1px solid #7a3030; }
+#success { background: #1a3328; color: #6ef; border: 1px solid #2a6048; }
+.hidden  { display: none !important; }
+
+/* --- Неверный сервис --- */
+#wrongServicePanel  { text-align: center; margin-top: 16px; }
+#wrongServiceMsg {
+    color: #ddd;
+    font-size: 14px;
+    line-height: 1.7;
+    background: #2e2e30;
+    border: 1px solid #3d3d3f;
+    border-radius: 8px;
+    padding: 16px 12px;
+    margin-bottom: 14px;
+}
+#serviceLinks { display: flex; gap: 8px; margin-bottom: 8px; }
+.service-link-btn {
+    background: #252527 !important;
+    color: #fff !important;
+    font-size: 14px;
+    font-weight: bold;
+}
+.zvuk-link-btn {
+    flex: 1;
+    border: 2px solid var(--primary-color) !important;
+}
+.zvuk-link-btn:hover { background: rgba(34,195,117,0.12) !important; }
+.github-link-btn {
+    width: 100%;
+    border: 2px solid #6e7681 !important;
+    font-size: 13px;
+    padding: 8px;
+}
+.github-link-btn:hover { background: rgba(110,118,129,0.12) !important; }
+
+/* --- История --- */
+#historyHeader {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+#historyTitle {
+    color: #ddd;
+    font-size: 16px;
+    font-weight: bold;
+    flex: 1;
+    text-align: center;
+    padding-right: 60px;
+}
+.history-nav-btn {
+    width: auto;
+    padding: 6px 10px;
+    font-size: 13px;
+    background: transparent;
+    border: 1px solid #3d3d3f;
+    color: #bdbdbd;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.history-nav-btn:hover {
+    background: #2e2e30;
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+#historyList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    max-height: 380px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+#historyList::-webkit-scrollbar       { width: 4px; }
+#historyList::-webkit-scrollbar-track { background: #252527; }
+#historyList::-webkit-scrollbar-thumb { background: #3d3d3f; border-radius: 2px; }
+
+.history-card {
+    background: #2e2e30;
+    border: 1px solid #3d3d3f;
+    border-left: 3px solid var(--primary-color);
+    border-radius: 4px;
+    padding: 10px 12px;
+}
+.history-card-title {
+    color: #ddd;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.history-artist {
+    color: #aaa;
+    font-size: 11px;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.history-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.history-badge {
+    font-size: 11px;
+    font-weight: bold;
+    border: 1px solid;
+    border-radius: 3px;
+    padding: 1px 5px;
+    flex-shrink: 0;
+}
+.history-date { color: #666; font-size: 11px; }
+
+#historyEmpty    { text-align: center; margin: 20px 0; }
+#historyEmptyMsg {
+    color: #ddd;
+    font-size: 14px;
+    background: #2e2e30;
+    border: 1px solid #3d3d3f;
+    border-radius: 8px;
+    padding: 20px 12px;
+    line-height: 1.7;
+}

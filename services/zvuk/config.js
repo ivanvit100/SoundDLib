@@ -1,0 +1,22 @@
+/**
+ * SoundDLib — zvuk.com service config
+ * @module services/zvuk/config
+ * @author ivanvit
+ * @version 0.0.1
+ */
+
+'use strict';
+
+(function(global) {
+    global.zvukConfig = {
+        name: 'zvuk',
+        color: '#22c375',
+        baseUrl: 'https://zvuk.com',
+        apiUrl: 'https://zvuk.com/api/v1',
+        headers: {
+            'Referer': 'https://zvuk.com/',
+            'Origin': 'https://zvuk.com',
+            'Accept': 'application/json'
+        }
+    };
+})(typeof window !== 'undefined' ? window : self);

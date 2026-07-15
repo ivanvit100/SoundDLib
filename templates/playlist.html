@@ -1,0 +1,29 @@
+<div id="playlistSection">
+
+    <div id="discoverySection">
+        <div id="discoveryStatus">Загрузка треков...</div>
+        <progress id="discoveryBar" max="100" value="0"></progress>
+    </div>
+
+    <div id="trackListSection" style="display:none;">
+        <div id="trackCount" class="track-count"></div>
+        <div id="trackList" class="track-list"></div>
+    </div>
+
+    <div id="formatContainer" style="display:none;">
+        <label for="formatSelector">Формат:</label>
+        <select id="formatSelector"></select>
+    </div>
+
+    <button id="downloadBtn" style="display:none;">Скачать плейлист</button>
+
+    <progress id="progress" max="100" value="0" style="display:none;"></progress>
+    <div id="status"></div>
+
+    <div id="downloadControls" style="display:none;">
+        <button id="pauseBtn">Пауза</button>
+        <button id="stopBtn">Стоп</button>
+    </div>
+
+    <div id="doneSection" style="display:none;"></div>
+</div>

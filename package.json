@@ -1,0 +1,40 @@
+{
+  "name": "sounddlib",
+  "version": "0.0.1",
+  "description": "Browser extension for downloading manga",
+  "homepage": "https://github.com/ivanvit100/SoundDLib#readme",
+  "bugs": {
+    "url": "https://github.com/ivanvit100/SoundDLib/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivanvit100/SoundDLib.git"
+  },
+  "license": "MIT",
+  "author": "ivanvit",
+  "type": "commonjs",
+  "main": "app.js",
+  "directories": {
+    "lib": "lib",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "vitest run --isolate",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@ffmpeg/core-st": "^0.11.1",
+    "@ffmpeg/ffmpeg": "^0.11.6",
+    "vitest": "^4.0.17"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@stylistic/eslint-plugin": "^5.0.0",
+    "@vitest/coverage-istanbul": "^4.0.17",
+    "assemblyscript": "^0.28.17",
+    "eslint": "^9.0.0",
+    "eslint-plugin-regexp": "^2.0.0",
+    "globals": "^16.0.0",
+    "jsdom": "^27.4.0"
+  }
+}

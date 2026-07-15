@@ -1,0 +1,17 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+    test: {
+        globals: true,
+        bail: 1,
+        environment: 'jsdom',
+        include: ['tests/**/*.test.js'],
+        coverage: {
+            provider: 'istanbul',
+            reporter: ['text', 'html'],
+            exclude: ['**/node_modules/**', '**/lib/**', '**/background/service-worker.js', '**/**/**/config.js', '/assembly/**', '**/tests/**'],
+            all: true,
+            include: ['*.js', 'core/**/*.js', 'background/**/*.js', 'content/**/*.js', 'exporters/**/*.js', 'services/**/*.js', 'ui/**/*.js'],
+        },
+    },
+});
