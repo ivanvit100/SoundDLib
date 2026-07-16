@@ -58,5 +58,118 @@
         });
     }
 
+    window.__sounddlib_key_spy = true;
+    window.__sounddlib_key_store = {};
+    window.__sounddlib_raw_key_store = {};
+    window.__sounddlib_pending_tid = null;
+
+    const _fetch = window.fetch;
+    window.fetch = async function(...args) {
+        const res = await _fetch.apply(this, args);
+        try {
+            const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url ?? '');
+            if (url.includes('/keyserver/api/v1/key')) {
+                const tid = new URL(url).searchParams.get('track_id');
+                if (tid) window.__sounddlib_pending_tid = tid;
+            }
+        } catch {}
+        return res;
+    };
+
+    const _arrayBuffer = Response.prototype.arrayBuffer;
+    Response.prototype.arrayBuffer = async function() {
+        const result = await _arrayBuffer.call(this);
+        try {
+            if (this.url?.includes('/keyserver/api/v1/key')) {
+                const tid = new URL(this.url).searchParams.get('track_id');
+                if (tid)
+                    window.__sounddlib_raw_key_store[tid] = Array.from(new Uint8Array(result.slice(0)));
+            }
+        } catch {}
+        return result;
+    };
+
+    const _importKey = crypto.subtle.importKey.bind(crypto.subtle);
+    crypto.subtle.importKey = async function(format, keyData, algorithm, extractable, usages) {
+        const result = await _importKey(format, keyData, algorithm, extractable, usages);
+        try {
+            if (format === 'raw' && (algorithm?.name ?? algorithm) === 'AES-CBC') {
+                const src = keyData instanceof ArrayBuffer
+                    ? keyData
+                    : ArrayBuffer.isView(keyData)
+                        ? keyData.buffer.slice(keyData.byteOffset, keyData.byteOffset + keyData.byteLength)
+                        : null;
+                if (src && src.byteLength === 16 && window.__sounddlib_pending_tid)
+                    window.__sounddlib_key_store[window.__sounddlib_pending_tid] = Array.from(new Uint8Array(src));
+            }
+        } catch {}
+        return result;
+    };
+
+    const _xhrOpen = XMLHttpRequest.prototype.open;
+    const _xhrUrls = new WeakMap();
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        _xhrUrls.set(this, String(url));
+        return _xhrOpen.call(this, method, url, ...rest);
+    };
+    const _xhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(body) {
+        const xhrUrl = _xhrUrls.get(this) || '';
+        if (xhrUrl.includes('/keyserver/api/v1/key')) {
+            try {
+                const tid = new URL(xhrUrl, location.origin).searchParams.get('track_id');
+                if (tid) {
+                    window.__sounddlib_pending_tid = tid;
+                    this.addEventListener('loadend', () => {
+                        try {
+                            if (this.status === 200 && this.response instanceof ArrayBuffer)
+                                window.__sounddlib_raw_key_store[tid] = Array.from(new Uint8Array(this.response));
+                        } catch {}
+                    });
+                }
+            } catch {}
+        }
+        return _xhrSend.call(this, body);
+    };
+
+    const _workerSpy = '(function(){try{' +
+        'var _pm=self.postMessage.bind(self);' +
+        'var _ik=self.crypto.subtle.importKey.bind(self.crypto.subtle);' +
+        'self.crypto.subtle.importKey=async function(fmt,kd,alg,ext,usg){' +
+            'var r=await _ik(fmt,kd,alg,ext,usg);' +
+            'try{' +
+                'var n=typeof alg==="string"?alg:(alg&&alg.name);' +
+                'if(fmt==="raw"&&n==="AES-CBC"){' +
+                    'var ab=kd instanceof ArrayBuffer?kd:' +
+                        '(ArrayBuffer.isView(kd)?kd.buffer.slice(kd.byteOffset,kd.byteOffset+kd.byteLength):null);' +
+                    'if(ab&&ab.byteLength===16)_pm({__sounddlib_wk:Array.from(new Uint8Array(ab))});' +
+                '}' +
+            '}catch(e){}' +
+            'return r;' +
+        '};' +
+    '}catch(e){}})();\n';
+
+    const _Blob = window.Blob;
+    window.Blob = function(parts, options) {
+        if (Array.isArray(parts) && typeof parts[0] === 'string' && parts[0].length > 200) {
+            const t = options?.type ?? '';
+            if (!t || t.includes('javascript') || t.includes('ecmascript'))
+                parts = [_workerSpy, ...parts];
+        }
+        return new _Blob(parts, options);
+    };
+
+    const _Worker = window.Worker;
+    window.Worker = function(url, options) {
+        const w = new _Worker(url, options);
+        w.addEventListener('message', e => {
+            try {
+                if (e.data?.__sounddlib_wk && window.__sounddlib_pending_tid)
+                    window.__sounddlib_key_store[window.__sounddlib_pending_tid] = e.data.__sounddlib_wk;
+            } catch {}
+        });
+        return w;
+    };
+
     console.log('[SoundDLib] AudioInterceptor active');
 })();

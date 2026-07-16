@@ -155,23 +155,178 @@
 
     globalThis.encryptedKeyStore = {};
 
+    const KEY_URLS = ['*://zvuk.com/keyserver/api/v1/key*'];
+    const SKIP_HEADERS = new Set([
+        'host', 'content-length', 'connection', 'transfer-encoding',
+        'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-dest', 'sec-fetch-user',
+        'origin', 'referer', 'cookie', 'user-agent', 'accept-encoding'
+    ]);
+
+    globalThis.nativeKeyStore = {};
+
     function setupKeyCapture() {
-        if (!browserAPI?.webRequest?.onCompleted) return;
-        browserAPI.webRequest.onCompleted.addListener((details) => {
-            if (details.statusCode !== 200) return;
+        if (!browserAPI?.webRequest) return;
+
+        const pending = new Map();
+
+        if (typeof browserAPI.webRequest.filterResponseData === 'function') {
+            console.log('[KeyCapture] filterResponseData available, attaching to onBeforeRequest (blocking)');
+            browserAPI.webRequest.onBeforeRequest.addListener((details) => {
+                try {
+                    const trackId = new URL(details.url).searchParams.get('track_id');
+                    if (!trackId) return;
+                    console.log('[KeyCapture] filterResponseData: intercepting track', trackId);
+                    const filter = browserAPI.webRequest.filterResponseData(details.requestId);
+                    const chunks = [];
+                    filter.ondata = (e) => { chunks.push(new Uint8Array(e.data)); filter.write(e.data); };
+                    filter.onstop = () => {
+                        try {
+                            let len = 0;
+                            for (const c of chunks) len += c.length;
+                            const buf = new Uint8Array(len);
+                            let off = 0;
+                            for (const c of chunks) { buf.set(c, off); off += c.length; }
+                            globalThis.nativeKeyStore[trackId] = Array.from(buf);
+                            console.log('[KeyCapture] native response for track', trackId, ':', globalThis.nativeKeyStore[trackId]);
+                        } catch (e) {
+                            console.warn('[KeyCapture] onstop error:', e);
+                        }
+                        filter.close();
+                    };
+                    filter.onerror = () => console.warn('[KeyCapture] filter error for track', trackId, filter.error);
+                } catch (e) {
+                    console.warn('[KeyCapture] filterResponseData error:', e);
+                }
+            }, { urls: KEY_URLS }, ['blocking']);
+        } else {
+            console.log('[KeyCapture] filterResponseData NOT available');
+        }
+
+        if (browserAPI.webRequest.onBeforeSendHeaders) {
+            browserAPI.webRequest.onBeforeSendHeaders.addListener((details) => {
+                try {
+                    const trackId = new URL(details.url).searchParams.get('track_id');
+                    if (trackId) pending.set(details.requestId, { trackId, headers: details.requestHeaders || [] });
+                } catch {}
+            }, { urls: KEY_URLS }, ['requestHeaders']);
+        }
+
+        if (browserAPI.webRequest.onCompleted) {
+            browserAPI.webRequest.onCompleted.addListener((details) => {
+                console.log('[KeyCapture] keyserver hit:', details.statusCode, details.url.slice(0, 160));
+                const info = pending.get(details.requestId);
+                pending.delete(details.requestId);
+
+                if (details.statusCode !== 200 || !info) return;
+
+                const hdrs = info.headers.filter(h => !SKIP_HEADERS.has(h.name.toLowerCase()));
+                globalThis.encryptedKeyStore[info.trackId] = { headers: hdrs };
+                console.log('[KeyCapture] stored key headers for track', info.trackId,
+                    hdrs.map(h => h.name).join(', '));
+            }, { urls: KEY_URLS }, []);
+        }
+    }
+
+    function setupEarlyInjection() {
+        if (!browserAPI?.tabs?.onUpdated || !browserAPI?.scripting?.executeScript) return;
+
+        browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+            if (changeInfo.status !== 'complete') return;
+            if (!tab.url?.includes('zvuk.com')) return;
             try {
-                const params = new URL(details.url).searchParams;
-                const key = params.get('encrypted_key');
-                const trackId = params.get('track_id');
-                if (key && trackId) globalThis.encryptedKeyStore[trackId] = key;
+                await browserAPI.scripting.executeScript({
+                    target: { tabId },
+                    world: 'MAIN',
+                    func: () => {
+                        if (window.__sounddlib_key_spy) return;
+                        window.__sounddlib_key_spy = true;
+                        window.__sounddlib_key_store = {};
+                        window.__sounddlib_raw_key_store = {};
+                        window.__sounddlib_pending_tid = null;
+
+                        const _f = window.fetch;
+                        window.fetch = async function(...args) {
+                            const res = await _f.apply(this, args);
+                            try {
+                                const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url ?? '');
+                                if (url.includes('/keyserver/api/v1/key')) {
+                                    const tid = new URL(url).searchParams.get('track_id');
+                                    if (tid) window.__sounddlib_pending_tid = tid;
+                                }
+                            } catch {}
+                            return res;
+                        };
+
+                        const _ab = Response.prototype.arrayBuffer;
+                        Response.prototype.arrayBuffer = async function() {
+                            const result = await _ab.call(this);
+                            try {
+                                if (this.url?.includes('/keyserver/api/v1/key')) {
+                                    const tid = new URL(this.url).searchParams.get('track_id');
+                                    if (tid)
+                                        window.__sounddlib_raw_key_store[tid] = Array.from(new Uint8Array(result.slice(0)));
+                                }
+                            } catch {}
+                            return result;
+                        };
+
+                        const _ik = crypto.subtle.importKey.bind(crypto.subtle);
+                        crypto.subtle.importKey = async function(format, keyData, algorithm, extractable, usages) {
+                            const result = await _ik(format, keyData, algorithm, extractable, usages);
+                            try {
+                                if (format === 'raw' && (algorithm?.name ?? algorithm) === 'AES-CBC') {
+                                    const src = keyData instanceof ArrayBuffer
+                                        ? keyData
+                                        : ArrayBuffer.isView(keyData)
+                                            ? keyData.buffer.slice(keyData.byteOffset, keyData.byteOffset + keyData.byteLength)
+                                            : null;
+                                    if (src && src.byteLength === 16 && window.__sounddlib_pending_tid)
+                                        window.__sounddlib_key_store[window.__sounddlib_pending_tid] = Array.from(new Uint8Array(src));
+                                }
+                            } catch {}
+                            return result;
+                        };
+
+                        const _xhrOpen = XMLHttpRequest.prototype.open;
+                        const _xhrUrls = new WeakMap();
+                        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                            _xhrUrls.set(this, String(url));
+                            return _xhrOpen.call(this, method, url, ...rest);
+                        };
+                        const _xhrSend = XMLHttpRequest.prototype.send;
+                        XMLHttpRequest.prototype.send = function(body) {
+                            const xhrUrl = _xhrUrls.get(this) || '';
+                            if (xhrUrl.includes('/keyserver/api/v1/key')) {
+                                try {
+                                    const tid = new URL(xhrUrl, location.origin).searchParams.get('track_id');
+                                    if (tid) {
+                                        window.__sounddlib_pending_tid = tid;
+                                        this.addEventListener('loadend', () => {
+                                            try {
+                                                if (this.status === 200 && this.response instanceof ArrayBuffer)
+                                                    window.__sounddlib_raw_key_store[tid] = Array.from(new Uint8Array(this.response));
+                                            } catch {}
+                                        });
+                                    }
+                                } catch {}
+                            }
+                            return _xhrSend.call(this, body);
+                        };
+
+                        console.log('[SoundDLib] Key spy v3 injected');
+                    }
+                });
             } catch {}
-        }, { urls: ['*://zvuk.com/keyserver/api/v1/key*'] }, []);
+        });
+
+        console.log('[RequestInterceptor] Early injection listener installed');
     }
 
     setupFirefoxListeners();
     setupChromeRateLimiter();
     setupServiceCapture();
     setupKeyCapture();
+    setupEarlyInjection();
 
     console.log('[RequestInterceptor] Loaded');
 })();

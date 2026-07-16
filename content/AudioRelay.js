@@ -30,10 +30,13 @@
         if (message.action === 'fetchKeyFromMainWorld') {
             (async () => {
                 try {
-                    const res = await fetch(message.url, {
-                        credentials: 'include',
-                        mode: 'same-origin'
-                    });
+                    const init = { credentials: 'include', mode: 'same-origin' };
+                    const hdrs = message.extraHeaders || [];
+                    if (hdrs.length) {
+                        init.headers = {};
+                        for (const h of hdrs) init.headers[h.name] = h.value;
+                    }
+                    const res = await fetch(message.url, init);
                     if (!res.ok) { sendResponse({ ok: false, status: res.status }); return; }
                     const buf = await res.arrayBuffer();
                     sendResponse({ ok: true, data: Array.from(new Uint8Array(buf)) });

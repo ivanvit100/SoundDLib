@@ -134,8 +134,11 @@
                     const token = globalThis.authTokenStore?.zvuk;
                     const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-                    const tabs = await browserAPI.tabs.query({ url: '*://*.zvuk.com/*' });
-                    const tabId = tabs?.[0]?.id ?? sender?.tab?.id ?? null;
+                    const [tabsRootA, tabsSubA] = await Promise.all([
+                        browserAPI.tabs.query({ url: '*://zvuk.com/*' }),
+                        browserAPI.tabs.query({ url: '*://*.zvuk.com/*' })
+                    ]);
+                    const tabId = [...(tabsRootA || []), ...(tabsSubA || [])][0]?.id ?? sender?.tab?.id ?? null;
 
                     if (tabId) {
                         const result = await browserAPI.tabs.sendMessage(tabId, {
@@ -220,43 +223,77 @@
         ['fetchKeyFromTab', (msg, sender, respond) => {
             (async () => {
                 try {
-                    const tabs = await browserAPI.tabs.query({ url: '*://*.zvuk.com/*' });
-                    const tabId = tabs?.[0]?.id ?? sender?.tab?.id ?? null;
+                    const [tabsRoot, tabsSub] = await Promise.all([
+                        browserAPI.tabs.query({ url: '*://zvuk.com/*' }),
+                        browserAPI.tabs.query({ url: '*://*.zvuk.com/*' })
+                    ]);
+                    const allTabs = [...(tabsRoot || []), ...(tabsSub || [])];
+                    const tabId = allTabs[0]?.id ?? sender?.tab?.id ?? null;
                     if (!tabId) { respond({ ok: false, error: 'No zvuk.com tab found' }); return; }
 
-                    // Enrich key URL with encrypted_key captured from native player
-                    const keyUrlObj = new URL(msg.url);
-                    const trackId = keyUrlObj.searchParams.get('track_id');
-                    const storedKey = globalThis.encryptedKeyStore?.[trackId];
-                    if (storedKey && !keyUrlObj.searchParams.has('encrypted_key'))
-                        keyUrlObj.searchParams.set('encrypted_key', storedKey);
-                    const keyUrl = keyUrlObj.toString();
+                    const keyUrl = msg.url;
+                    const trackId = new URL(keyUrl).searchParams.get('track_id');
+                    const stored = globalThis.encryptedKeyStore?.[trackId];
+                    const extraHeaders = stored?.headers ?? [];
+
+                    const xek = extraHeaders.find(h => h.name.toLowerCase() === 'x-encrypted-key');
+                    const nativeKey = globalThis.nativeKeyStore?.[trackId];
+                    console.log('[fetchKeyFromTab] trackId:', trackId,
+                        '| stored headers:', extraHeaders.map(h => h.name).join(', ') || 'none',
+                        '| x-encrypted-key value:', xek?.value ?? '(none)',
+                        '| nativeKey bytes:', nativeKey ?? 'none');
+
+                    if (nativeKey) {
+                        respond({ ok: true, data: nativeKey, source: 'native', xekValue: xek?.value ?? '' });
+                        return;
+                    }
 
                     if (browserAPI.scripting?.executeScript) {
                         try {
                             const results = await browserAPI.scripting.executeScript({
                                 target: { tabId },
                                 world: 'MAIN',
-                                func: async (url) => {
+                                func: async (trackId, url, hdrs) => {
+                                    const spyKey = window.__sounddlib_key_store?.[trackId];
+                                    if (spyKey) return { ok: true, data: spyKey, source: 'spy' };
+
                                     try {
-                                        const res = await fetch(url, { credentials: 'include', mode: 'same-origin' });
+                                        const init = { credentials: 'include', mode: 'same-origin' };
+                                        if (hdrs.length) {
+                                            init.headers = {};
+                                            for (const h of hdrs) init.headers[h.name] = h.value;
+                                        }
+                                        const res = await fetch(url, init);
                                         if (!res.ok) return { ok: false, status: res.status };
                                         const buf = await res.arrayBuffer();
-                                        return { ok: true, data: Array.from(new Uint8Array(buf)) };
+                                        const ourData = Array.from(new Uint8Array(buf));
+                                        const nativeData = window.__sounddlib_raw_key_store?.[trackId];
+                                        return {
+                                            ok: true,
+                                            data: ourData,
+                                            source: 'fetch',
+                                            nativeRaw: nativeData ?? null
+                                        };
                                     } catch (e) {
                                         return { ok: false, error: String(e) };
                                     }
                                 },
-                                args: [keyUrl]
+                                args: [trackId, keyUrl, extraHeaders]
                             });
                             const result = results?.[0]?.result;
+                            if (result?.ok) result.xekValue = xek?.value ?? '';
+                            console.log('[fetchKeyFromTab] executeScript result:', JSON.stringify(result));
                             if (result) { respond(result); return; }
-                        } catch (_) { }
+                        } catch (e) {
+                            console.warn('[fetchKeyFromTab] executeScript threw:', String(e));
+                        }
                     }
 
+                    console.log('[fetchKeyFromTab] falling back to fetchKeyFromMainWorld');
                     const result = await browserAPI.tabs.sendMessage(tabId, {
-                        action: 'fetchKeyFromMainWorld', url: keyUrl
+                        action: 'fetchKeyFromMainWorld', url: keyUrl, extraHeaders
                     });
+                    console.log('[fetchKeyFromTab] relay result:', JSON.stringify(result));
                     respond(result ?? { ok: false, error: 'No response from content script' });
                 } catch (e) {
                     respond({ ok: false, error: String(e) });

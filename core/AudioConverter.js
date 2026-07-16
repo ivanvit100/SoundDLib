@@ -58,8 +58,6 @@
         }
 
         async convert(inputBuffer, inputMimeType, outputFormat, onProgress) {
-            await this._ensureLoaded();
-
             if (!inputBuffer || inputBuffer.byteLength < MIN_VALID_BYTES) {
                 throw new Error(
                     `Аудиоданные слишком маленькие (${inputBuffer?.byteLength ?? 0} байт). ` +
@@ -78,6 +76,13 @@
 
             const inputExt = MIME_TO_EXT[inputMimeType?.toLowerCase()] || 'mp3';
             const outputExt = outputFormat === 'aac' ? 'm4a' : outputFormat;
+
+            if (outputExt === 'm4a' && (inputMimeType === 'audio/mp4' || inputExt === 'm4a')) {
+                onProgress?.(100);
+                return inputBuffer;
+            }
+
+            await this._ensureLoaded();
             const codecArgs = CODEC_ARGS[outputFormat];
             if (!codecArgs) throw new Error(`Unsupported output format: ${outputFormat}`);
 

@@ -40,6 +40,8 @@
         "downloads",
         "storage",
         "webRequest",
+        "webRequestBlocking",
+        "webRequestFilterResponse",
         "scripting",
         "declarativeNetRequest",
         "declarativeNetRequestWithHostAccess"
