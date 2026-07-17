@@ -78,6 +78,79 @@ progress::-moz-progress-bar      { background: var(--primary-color); border-radi
 #description strong { font-size: 14px; }
 #description small  { color: #aaa; font-size: 12px; }
 
+/* --- Плеер --- */
+#playerControls {
+    margin: 8px 0 12px;
+}
+#playbackRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+#playbackTrack {
+    position: relative;
+    flex: 1;
+    height: 4px;
+    background: #3d3d3f;
+    border-radius: 2px;
+}
+#playbackFill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 0%;
+    background: var(--primary-color);
+    border-radius: 2px;
+    pointer-events: none;
+}
+#playbackBar {
+    position: absolute;
+    top: -8px;
+    left: 0;
+    right: 0;
+    bottom: -8px;
+    width: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+#playbackCurrent, #playbackDuration {
+    font-size: 11px;
+    color: #888;
+    min-width: 30px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+#playbackDuration { text-align: right; }
+#playerButtons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+}
+.player-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: #bdbdbd;
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+.player-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: var(--primary-color);
+}
+.player-btn--main {
+    width: 44px;
+    height: 44px;
+}
+
 /* --- Выбор качества и формата --- */
 #qualityContainer, #formatContainer {
     text-align: center;
@@ -290,11 +363,25 @@ progress::-moz-progress-bar      { background: var(--primary-color); border-radi
 #historyList::-webkit-scrollbar-thumb { background: #3d3d3f; border-radius: 2px; }
 
 .history-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
     background: #2e2e30;
     border: 1px solid #3d3d3f;
     border-left: 3px solid var(--primary-color);
     border-radius: 4px;
     padding: 10px 12px;
+}
+.history-cover {
+    width: 48px;
+    height: 48px;
+    border-radius: 3px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+.history-card-body {
+    flex: 1;
+    min-width: 0;
 }
 .history-card-title {
     color: #ddd;

@@ -32,9 +32,25 @@
                 if (!resp?.ok)
                     throw new Error(resp?.error || 'Трек не найден в хранилище');
 
-                const meta = resp.meta || {};
+                const meta = { ...(resp.meta || {}) };
                 let inputBuffer;
                 let inputMimeType = resp.mimeType;
+
+                // Enrich meta (cover, accurate title/artist) if not already present
+                if (!meta.cover) {
+                    const hlsUrl = resp.masterUrl || resp.url;
+                    const zvukId = hlsUrl?.match(/\/track\/(\d+)\//)?.[1];
+                    if (zvukId) {
+                        const svcName = resp.serviceName || 'zvuk';
+                        const svc = global.serviceRegistry?.getService(svcName);
+                        if (svc) {
+                            try {
+                                const fresh = await svc.fetchTrackMeta(zvukId);
+                                Object.assign(meta, fresh);
+                            } catch {}
+                        }
+                    }
+                }
 
                 let conversionStartPct = 15;
 
@@ -109,6 +125,7 @@
                     service: 'zvuk',
                     title: meta.title || 'Unknown',
                     artist: meta.artist || '',
+                    cover: meta.cover || null,
                     format,
                     trackId: resp.trackId
                 });

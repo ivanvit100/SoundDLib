@@ -143,6 +143,17 @@
             return tracks;
         }
 
+        _coverUrl(raw) {
+            for (const v of [raw.image, raw.cover, raw.release?.image]) {
+                if (typeof v === 'string' && v.startsWith('http')) return v;
+            }
+            if (raw.release?.image && raw.release?.id)
+                return `https://cdn-image.zvuk.com/pic?hash=${raw.release.image}&id=${raw.release.id}&size=large&type=release`;
+            if (raw.image && raw.id)
+                return `https://cdn-image.zvuk.com/pic?hash=${raw.image}&id=${raw.id}&size=large&type=track`;
+            return null;
+        }
+
         _normalizeTrack(raw) {
             const artists = Array.isArray(raw.artists)
                 ? raw.artists.map(a => a.name ?? a).join(', ')
@@ -154,7 +165,7 @@
                 artist: artists || 'Unknown',
                 album: raw.release?.title ?? raw.album ?? '',
                 duration: raw.duration ?? 0,
-                cover: raw.image ?? raw.cover ?? raw.release?.image ?? null,
+                cover: this._coverUrl(raw),
                 streamUrl: raw.stream ?? raw.stream_url ?? raw.audio ?? null
             };
         }

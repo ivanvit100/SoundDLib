@@ -39,6 +39,9 @@
 
                 if (!service) { await this._showWrongService(); return; }
 
+                const siteLogo = $el('siteLogo');
+                if (siteLogo) siteLogo.src = service.logo;
+
                 document.body.style.setProperty('--primary-color', service.color);
                 document.body.style.setProperty('--secondary-color', this._darken(service.color));
 
@@ -51,7 +54,7 @@
                 } else {
                     await global.TemplateLoader.show('single-track', () => {
                         global.popupSingleTrackController =
-                            new global.SingleTrackController(service);
+                            new global.SingleTrackController(service, tab.id);
                     });
                 }
             } catch (e) {
@@ -78,6 +81,8 @@
         }
 
         async _showWrongService() {
+            const siteLogo = $el('siteLogo');
+            if (siteLogo) siteLogo.src = 'icons/logo1.png';
             await global.TemplateLoader.show('wrong-service');
             $el('openZvuk')?.addEventListener('click', () =>
                 browserAPI.tabs.create({ url: 'https://zvuk.com' }));

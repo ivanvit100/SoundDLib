@@ -10,7 +10,8 @@
 (function(global) {
     global.zvukConfig = {
         name: 'zvuk',
-        color: '#22c375',
+        color: '#00D074',
+        logo: 'icons/logo1.png',
         baseUrl: 'https://zvuk.com',
         apiUrl: 'https://zvuk.com/api/v1',
         headers: {

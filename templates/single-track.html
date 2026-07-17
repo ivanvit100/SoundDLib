@@ -4,6 +4,29 @@
         <div id="description" style="overflow:hidden;"></div>
     </div>
 
+    <div id="playerControls">
+        <div id="playbackRow">
+            <span id="playbackCurrent">0:00</span>
+            <div id="playbackTrack">
+                <div id="playbackFill"></div>
+                <input type="range" id="playbackBar" min="0" max="100" value="0" step="1">
+            </div>
+            <span id="playbackDuration">0:00</span>
+        </div>
+        <div id="playerButtons">
+            <button id="prevBtn" class="player-btn" title="Предыдущий трек">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><rect x="5" y="4" width="2" height="16"/></svg>
+            </button>
+            <button id="playPauseBtn" class="player-btn player-btn--main" title="Пауза / Воспроизведение">
+                <svg id="playIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                <svg id="pauseIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <button id="nextBtn" class="player-btn" title="Следующий трек">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="2" height="16"/></svg>
+            </button>
+        </div>
+    </div>
+
     <div id="qualityContainer" style="display:none;">
         <label for="qualitySelector">Качество:</label>
         <select id="qualitySelector"></select>

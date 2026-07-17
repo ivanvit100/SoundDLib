@@ -107,6 +107,7 @@
                         action: 'trackCaptured',
                         trackId: actualId,
                         meta: stored?.meta || {},
+                        url: stored?.url || null,
                         type: entry.type,
                         qualities: entry.qualities || null
                     })?.catch?.(() => {});

@@ -51,20 +51,31 @@
             card.className = 'history-card';
             card.style.borderLeftColor = color;
 
+            if (entry.cover) {
+                const img = document.createElement('img');
+                img.src = entry.cover;
+                img.className = 'history-cover';
+                img.alt = '';
+                card.appendChild(img);
+            }
+
+            const body = document.createElement('div');
+            body.className = 'history-card-body';
+
             const titleRow = document.createElement('div');
             titleRow.className = 'history-card-title';
             titleRow.textContent = entry.title || '—';
-
-            const meta = document.createElement('div');
-            meta.className = 'history-card-meta';
+            body.appendChild(titleRow);
 
             if (entry.artist) {
                 const artist = document.createElement('span');
                 artist.className = 'history-artist';
                 artist.textContent = entry.artist;
-                card.appendChild(titleRow);
-                card.appendChild(artist);
-            } else card.appendChild(titleRow);
+                body.appendChild(artist);
+            }
+
+            const metaRow = document.createElement('div');
+            metaRow.className = 'history-card-meta';
 
             const badge = document.createElement('span');
             badge.className = 'history-badge';
@@ -76,9 +87,11 @@
             date.className = 'history-date';
             date.textContent = formatDate(entry.downloadedAt);
 
-            meta.appendChild(badge);
-            meta.appendChild(date);
-            card.appendChild(meta);
+            metaRow.appendChild(badge);
+            metaRow.appendChild(date);
+            body.appendChild(metaRow);
+
+            card.appendChild(body);
 
             return card;
         },

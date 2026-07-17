@@ -19,13 +19,19 @@
     function $el(id) { return document.getElementById(id); }
 
     class SingleTrackController {
-        constructor(service) {
+        constructor(service, tabId) {
             this.service = service;
+            this._tabId = tabId || null;
+            this._scripting = browserAPI.scripting
+                || (typeof globalThis.chrome !== 'undefined' ? globalThis.chrome.scripting : null)
+                || null;
             this.manager = new global.SingleTrackManager();
             this.converter = new global.AudioConverter();
             this._isDownloading = false;
             this._latestTrackId = null;
             this._isHls = false;
+            this._seeking = false;
+            this._pollInterval = null;
             this._init();
         }
 
@@ -34,6 +40,7 @@
             this._bindEvents();
             await this._loadTrackInfo();
             this._subscribeToCapture();
+            this._startPlaybackPolling();
         }
 
         _populateFormatSelector() {
@@ -94,12 +101,30 @@
                 const resp = await browserAPI.runtime.sendMessage({ action: 'getLatestTrack' });
                 if (resp?.ok) {
                     this._latestTrackId = resp.trackId;
-                    this._renderTrackMeta(resp.meta);
                     this._populateQualitySelector(resp.qualities || null);
                     if (btn) btn.disabled = false;
                     if (status) status.textContent = 'Нажмите «Скачать»';
+                    await this._fetchAndRenderMeta(resp.masterUrl || resp.url, resp.meta);
                 }
             } catch {}
+        }
+
+        async _fetchAndRenderMeta(hlsUrl, fallbackMeta) {
+            const zvukId = hlsUrl?.match(/\/track\/(\d+)\//)?.[1];
+            if (zvukId) {
+                try {
+                    const fresh = await this.service.fetchTrackMeta(zvukId);
+                    const real = (v, fb) => (v && v !== 'Unknown') ? v : (fb || v);
+                    this._renderTrackMeta({
+                        title:  real(fresh.title,  fallbackMeta?.title),
+                        artist: real(fresh.artist, fallbackMeta?.artist),
+                        album:  real(fresh.album,  fallbackMeta?.album),
+                        cover:  fresh.cover || fallbackMeta?.cover
+                    });
+                    return;
+                } catch {}
+            }
+            this._renderTrackMeta(fallbackMeta);
         }
 
         _renderTrackMeta(meta = {}) {
@@ -127,18 +152,39 @@
                 if (msg.action !== 'trackCaptured') return;
                 if (msg.trackId === this._latestTrackId) return;
                 this._latestTrackId = msg.trackId;
-                this._renderTrackMeta(msg.meta);
                 this._populateQualitySelector(msg.qualities || null);
                 const btn = $el('downloadBtn');
                 if (btn) btn.disabled = false;
                 const status = $el('status');
                 if (status) status.textContent = 'Нажмите «Скачать»';
+                this._fetchAndRenderMeta(msg.url, msg.meta);
             });
         }
 
         _bindEvents() {
             $el('downloadBtn')?.addEventListener('click', () => this._startDownload());
             $el('stopBtn')?.addEventListener('click',    () => this._stop());
+
+            $el('playPauseBtn')?.addEventListener('click', () => this._sendControl('playPause'));
+            $el('prevBtn')?.addEventListener('click',      () => this._sendControl('prevTrack'));
+            $el('nextBtn')?.addEventListener('click',      () => this._sendControl('nextTrack'));
+
+            const bar = $el('playbackBar');
+            if (bar) {
+                bar.addEventListener('mousedown',  () => { this._seeking = true; });
+                bar.addEventListener('touchstart', () => { this._seeking = true; }, { passive: true });
+                bar.addEventListener('input', () => {
+                    const pct = bar.max > 0 ? (parseFloat(bar.value) / parseFloat(bar.max) * 100) : 0;
+                    const fill = $el('playbackFill');
+                    if (fill) fill.style.width = `${pct}%`;
+                    const cur = $el('playbackCurrent');
+                    if (cur) cur.textContent = this._fmtTime(parseFloat(bar.value));
+                });
+                bar.addEventListener('change', () => {
+                    this._sendControl('seek', parseFloat(bar.value));
+                    this._seeking = false;
+                });
+            }
 
             this.manager.eventBus.on('download:progress', ({ message, percent }) => {
                 const s = $el('status');
@@ -175,6 +221,113 @@
 
         _stop() {
             this.manager.eventBus.emit('download:failed', { error: new Error('Остановлено') });
+        }
+
+        async _sendControl(action, position) {
+            if (!this._tabId || !this._scripting) return;
+            try {
+                await this._scripting.executeScript({
+                    target: { tabId: this._tabId },
+                    world: 'MAIN',
+                    func: (ctrl, pos) => {
+                        const media = document.querySelector('video, audio');
+                        if (ctrl === 'playPause') {
+                            if (media) {
+                                if (media.paused) media.play().catch(() => {});
+                                else media.pause();
+                            }
+                        } else if (ctrl === 'seek' && media && pos != null) {
+                            media.currentTime = pos;
+                        } else if (ctrl === 'prevTrack' || ctrl === 'nextTrack') {
+                            const next = ctrl === 'nextTrack';
+                            const sels = next
+                                ? ['[data-testid*="next"]', '[data-testid*="Next"]', '[aria-label*="след"]', '[aria-label*="next"]', '[class*="nextButton"]', '[class*="nextTrack"]']
+                                : ['[data-testid*="prev"]', '[data-testid*="Prev"]', '[aria-label*="пред"]', '[aria-label*="previous"]', '[class*="prevButton"]', '[class*="prevTrack"]'];
+                            for (const s of sels) {
+                                const el = document.querySelector(s);
+                                if (el) { el.click(); break; }
+                            }
+                        }
+                    },
+                    args: [action, position ?? null]
+                });
+            } catch {}
+        }
+
+        async _queryPlaybackState() {
+            if (!this._tabId || !this._scripting) return null;
+            try {
+                const results = await this._scripting.executeScript({
+                    target: { tabId: this._tabId },
+                    world: 'MAIN',
+                    func: () => {
+                        const media = document.querySelector('video, audio');
+                        if (!media) return null;
+                        return {
+                            currentTime: media.currentTime,
+                            duration: isFinite(media.duration) ? media.duration : 0,
+                            paused: media.paused
+                        };
+                    }
+                });
+                return results?.[0]?.result ?? null;
+            } catch {
+                return null;
+            }
+        }
+
+        _startPlaybackPolling() {
+            this._stopPlaybackPolling();
+            const poll = async () => {
+                this._updatePlayerUI(await this._queryPlaybackState());
+            };
+            poll();
+            this._pollInterval = setInterval(poll, 1000);
+        }
+
+        _stopPlaybackPolling() {
+            if (this._pollInterval) {
+                clearInterval(this._pollInterval);
+                this._pollInterval = null;
+            }
+        }
+
+        _updatePlayerUI(state) {
+            const fill = $el('playbackFill');
+            const bar  = $el('playbackBar');
+            const cur  = $el('playbackCurrent');
+            const dur  = $el('playbackDuration');
+            const play = $el('playIcon');
+            const paus = $el('pauseIcon');
+
+            if (!state) {
+                if (fill) fill.style.width = '0%';
+                if (cur)  cur.textContent = '0:00';
+                if (dur)  dur.textContent = '0:00';
+                if (bar && !this._seeking) { bar.max = 100; bar.value = 0; }
+                if (play) play.style.display = '';
+                if (paus) paus.style.display = 'none';
+                return;
+            }
+
+            const { currentTime, duration, paused } = state;
+            const pct = duration > 0 ? (currentTime / duration * 100) : 0;
+            if (fill && !this._seeking) fill.style.width = `${pct}%`;
+            if (cur) cur.textContent = this._fmtTime(currentTime);
+            if (dur) dur.textContent = this._fmtTime(duration);
+            if (bar && !this._seeking) {
+                bar.max = duration > 0 ? Math.floor(duration) : 100;
+                bar.value = Math.floor(currentTime);
+            }
+            if (play) play.style.display = paused ? '' : 'none';
+            if (paus) paus.style.display = paused ? 'none' : '';
+        }
+
+        _fmtTime(sec) {
+            if (!isFinite(sec) || sec < 0) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
         }
 
         _setDownloadingUI(active) {

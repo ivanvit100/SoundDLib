@@ -66,6 +66,17 @@
         }
 
         if (message.action === 'getTabMeta') {
+            const session = navigator.mediaSession?.metadata;
+            if (session && (session.title || session.artist)) {
+                const cover = session.artwork?.[0]?.src || null;
+                sendResponse({ ok: true, meta: {
+                    title:  session.title  || '',
+                    artist: session.artist || '',
+                    cover
+                }});
+                return false;
+            }
+
             const title = document.querySelector(
                 '[class*="title"]:not([class*="album"]):not([class*="artist"]), ' +
                 '[data-testid*="track-title"], h1'
@@ -73,7 +84,7 @@
             const artist = document.querySelector(
                 '[class*="artist"], [data-testid*="artist"]'
             )?.textContent?.trim() || '';
-            sendResponse({ ok: true, meta: { title, artist } });
+            sendResponse({ ok: true, meta: { title, artist, cover: null } });
             return false;
         }
 

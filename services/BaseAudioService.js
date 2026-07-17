@@ -14,6 +14,7 @@
             this.config = config;
             this.name = config.name;
             this.color = config.color || '#22c375';
+            this.logo = config.logo || 'icons/logo1.png';
             console.log(`[BaseAudioService] Created: ${this.name}`);
         }
 
