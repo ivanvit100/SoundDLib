@@ -30,8 +30,20 @@
 
         async _route() {
             try {
-                const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
-                const tab = tabs?.[0];
+                const params = new URLSearchParams(location.search);
+                const forcedTabId = parseInt(params.get('tabId')) || null;
+                const autoDownload = params.get('autoDownload') === '1';
+                const standalone   = forcedTabId !== null || autoDownload;
+
+                let tab;
+                if (forcedTabId) {
+                    try { tab = await browserAPI.tabs.get(forcedTabId); } catch {}
+                }
+                if (!tab) {
+                    const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
+                    tab = tabs?.[0];
+                }
+
                 if (!tab?.url) { await this._showWrongService(); return; }
 
                 const { url } = tab;
@@ -54,7 +66,7 @@
                 } else {
                     await global.TemplateLoader.show('single-track', () => {
                         global.popupSingleTrackController =
-                            new global.SingleTrackController(service, tab.id);
+                            new global.SingleTrackController(service, tab.id, { standalone, autoDownload });
                     });
                 }
             } catch (e) {
@@ -72,6 +84,28 @@
         _bindShellEvents() {
             if (this._shellBound) return;
             this._shellBound = true;
+
+            const standalone = new URLSearchParams(location.search).has('tabId') ||
+                                new URLSearchParams(location.search).has('autoDownload');
+
+            const popoutBtn = $el('popoutBtn');
+            if (standalone) {
+                if (popoutBtn) popoutBtn.style.display = 'none';
+            } else {
+                popoutBtn?.addEventListener('click', async () => {
+                    try {
+                        const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
+                        const tabId = tabs?.[0]?.id;
+                        const qs = tabId ? `?tabId=${tabId}` : '';
+                        await browserAPI.windows.create({
+                            url: browserAPI.runtime.getURL(`popup.html${qs}`),
+                            type: 'popup',
+                            width: 340,
+                            height: 590
+                        });
+                    } catch {}
+                });
+            }
 
             $el('historyBtn')?.addEventListener('click', () => {
                 const logoInfo = $el('logoInfo');

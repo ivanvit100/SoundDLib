@@ -19,12 +19,11 @@
     function $el(id) { return document.getElementById(id); }
 
     class SingleTrackController {
-        constructor(service, tabId) {
+        constructor(service, tabId, options = {}) {
             this.service = service;
             this._tabId = tabId || null;
-            this._scripting = browserAPI.scripting
-                || (typeof globalThis.chrome !== 'undefined' ? globalThis.chrome.scripting : null)
-                || null;
+            this._standalone   = options.standalone   || false;
+            this._autoDownload = options.autoDownload || false;
             this.manager = new global.SingleTrackManager();
             this.converter = new global.AudioConverter();
             this._isDownloading = false;
@@ -41,6 +40,8 @@
             await this._loadTrackInfo();
             this._subscribeToCapture();
             this._startPlaybackPolling();
+            if (this._autoDownload && this._latestTrackId)
+                this._startDownload();
         }
 
         _populateFormatSelector() {
@@ -162,7 +163,10 @@
         }
 
         _bindEvents() {
-            $el('downloadBtn')?.addEventListener('click', () => this._startDownload());
+            $el('downloadBtn')?.addEventListener('click', () => {
+                if (!this._standalone) { this._openInWindow(true); return; }
+                this._startDownload();
+            });
             $el('stopBtn')?.addEventListener('click',    () => this._stop());
 
             $el('playPauseBtn')?.addEventListener('click', () => this._sendControl('playPause'));
@@ -204,6 +208,20 @@
             });
         }
 
+        async _openInWindow(autoDownload = false) {
+            try {
+                const qs = new URLSearchParams();
+                if (this._tabId) qs.set('tabId', this._tabId);
+                if (autoDownload) qs.set('autoDownload', '1');
+                await browserAPI.windows.create({
+                    url: browserAPI.runtime.getURL(`popup.html?${qs}`),
+                    type: 'popup',
+                    width: 340,
+                    height: 590
+                });
+            } catch {}
+        }
+
         async _startDownload() {
             if (this._isDownloading) return;
             this._isDownloading = true;
@@ -224,53 +242,63 @@
         }
 
         async _sendControl(action, position) {
-            if (!this._tabId || !this._scripting) return;
+            if (!this._tabId) return;
+
+            let prevTrackId = null;
+            if (action === 'prevTrack' || action === 'nextTrack') {
+                try {
+                    const cur = await browserAPI.tabs.sendMessage(this._tabId, { action: 'getTabMeta' });
+                    prevTrackId = cur?.meta?.zvukTrackId || null;
+                } catch {}
+            }
+
             try {
-                await this._scripting.executeScript({
-                    target: { tabId: this._tabId },
-                    world: 'MAIN',
-                    func: (ctrl, pos) => {
-                        const media = document.querySelector('video, audio');
-                        if (ctrl === 'playPause') {
-                            if (media) {
-                                if (media.paused) media.play().catch(() => {});
-                                else media.pause();
-                            }
-                        } else if (ctrl === 'seek' && media && pos != null) {
-                            media.currentTime = pos;
-                        } else if (ctrl === 'prevTrack' || ctrl === 'nextTrack') {
-                            const next = ctrl === 'nextTrack';
-                            const sels = next
-                                ? ['[data-testid*="next"]', '[data-testid*="Next"]', '[aria-label*="след"]', '[aria-label*="next"]', '[class*="nextButton"]', '[class*="nextTrack"]']
-                                : ['[data-testid*="prev"]', '[data-testid*="Prev"]', '[aria-label*="пред"]', '[aria-label*="previous"]', '[class*="prevButton"]', '[class*="prevTrack"]'];
-                            for (const s of sels) {
-                                const el = document.querySelector(s);
-                                if (el) { el.click(); break; }
-                            }
-                        }
-                    },
-                    args: [action, position ?? null]
+                await browserAPI.tabs.sendMessage(this._tabId, {
+                    action: 'playbackControl',
+                    control: action,
+                    position: position ?? null
                 });
             } catch {}
+
+            if (action === 'prevTrack' || action === 'nextTrack')
+                this._awaitTrackChange(prevTrackId);
+        }
+
+        async _awaitTrackChange(prevTrackId) {
+            const token = (this._trackChangeToken = {});
+
+            for (let i = 0; i < 12; i++) {
+                await new Promise(r => setTimeout(r, 500));
+                if (token !== this._trackChangeToken) return;
+                try {
+                    const resp = await browserAPI.tabs.sendMessage(this._tabId, { action: 'getTabMeta' });
+                    if (token !== this._trackChangeToken) return;
+                    const meta = resp?.meta;
+                    const newId = meta?.zvukTrackId || null;
+                    if (!newId || newId === prevTrackId) continue;
+                    const url = `https://cdn-hls-slicer.zvuk.com/drm/track/${newId}/master.m3u8`;
+                    await this._fetchAndRenderMeta(url, meta);
+                    if (token !== this._trackChangeToken) return;
+                    const latest = await browserAPI.runtime.sendMessage({ action: 'getLatestTrack' }).catch(() => null);
+                    if (token !== this._trackChangeToken) return;
+                    if (latest?.ok && latest.trackId !== this._latestTrackId) {
+                        this._latestTrackId = latest.trackId;
+                        this._populateQualitySelector(latest.qualities || null);
+                        const btn = $el('downloadBtn');
+                        if (btn) btn.disabled = false;
+                    }
+                    return;
+                } catch {}
+            }
         }
 
         async _queryPlaybackState() {
-            if (!this._tabId || !this._scripting) return null;
+            if (!this._tabId) return null;
             try {
-                const results = await this._scripting.executeScript({
-                    target: { tabId: this._tabId },
-                    world: 'MAIN',
-                    func: () => {
-                        const media = document.querySelector('video, audio');
-                        if (!media) return null;
-                        return {
-                            currentTime: media.currentTime,
-                            duration: isFinite(media.duration) ? media.duration : 0,
-                            paused: media.paused
-                        };
-                    }
-                });
-                return results?.[0]?.result ?? null;
+                const resp = await browserAPI.tabs.sendMessage(
+                    this._tabId, { action: 'getPlaybackState' }
+                );
+                return resp?.ok ? resp.state : null;
             } catch {
                 return null;
             }

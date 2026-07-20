@@ -39,6 +39,7 @@
             configurable: true,
             get() { return _srcDesc.get.call(this); },
             set(value) {
+                window.__sounddlib_media_el = this;
                 if (typeof value === 'string' && value.startsWith('data:audio')) {
                     const comma = value.indexOf(',');
                     if (comma !== -1) {
@@ -57,6 +58,39 @@
             }
         });
     }
+
+    // Also capture via play() — handles detached elements (new Audio() not in DOM)
+    const _origPlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function() {
+        window.__sounddlib_media_el = this;
+        return _origPlay.call(this);
+    };
+
+    // Seed from DOM in case element already exists (page reuse)
+    if (!window.__sounddlib_media_el)
+        window.__sounddlib_media_el = document.querySelector('video, audio');
+
+    // State DOM bridge: write playback state every 500ms for ISOLATED world to read
+    setInterval(() => {
+        const media = window.__sounddlib_media_el;
+        if (!media || !document.body) return;
+        let el = document.getElementById('__sdl_state');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = '__sdl_state';
+            el.style.cssText = 'display:none;position:absolute;pointer-events:none;';
+            document.body.appendChild(el);
+        }
+        el.dataset.t = media.currentTime;
+        el.dataset.d = isFinite(media.duration) ? media.duration : 0;
+        el.dataset.p = media.paused ? '1' : '0';
+        // Handle seek requests written by ISOLATED world
+        const seekTo = parseFloat(el.dataset.seekTo);
+        if (!isNaN(seekTo)) {
+            media.currentTime = seekTo;
+            delete el.dataset.seekTo;
+        }
+    }, 500);
 
     window.__sounddlib_key_spy = true;
     window.__sounddlib_key_store = {};

@@ -302,6 +302,22 @@
             return true;
         }],
 
+        ['openDownloadWindow', (_msg, sender, respond) => {
+            (async () => {
+                try {
+                    const tabId = sender?.tab?.id;
+                    const qs = new URLSearchParams({ autoDownload: '1' });
+                    if (tabId) qs.set('tabId', String(tabId));
+                    respond({ ok: await openPopupWindow(
+                        browserAPI.runtime.getURL(`popup.html?${qs}`)
+                    )});
+                } catch (e) {
+                    respond({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }],
+
         ['openWindowWithUrl', (msg, _sender, respond) => {
             (async () => {
                 try {
