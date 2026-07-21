@@ -24,6 +24,8 @@
             this._tabId = tabId || null;
             this._standalone   = options.standalone   || false;
             this._autoDownload = options.autoDownload || false;
+            this._zvukTrackId  = options.zvukTrackId  || null;
+            this._trackMeta    = options.trackMeta    || null;
             this.manager = new global.SingleTrackManager();
             this.converter = new global.AudioConverter();
             this._isDownloading = false;
@@ -37,8 +39,8 @@
         async _init() {
             this._populateFormatSelector();
             this._bindEvents();
+            this._subscribeToCapture();      // before loadTrackInfo to avoid missing early captures
             await this._loadTrackInfo();
-            this._subscribeToCapture();
             this._startPlaybackPolling();
             if (this._autoDownload && this._latestTrackId)
                 this._startDownload();
@@ -93,6 +95,11 @@
         }
 
         async _loadTrackInfo() {
+            if (this._zvukTrackId) {
+                await this._loadTrackFromZvukId();
+                return;
+            }
+
             const status = $el('status');
             const btn    = $el('downloadBtn');
             if (btn)    btn.disabled = true;
@@ -110,8 +117,66 @@
             } catch {}
         }
 
+        async _loadTrackFromZvukId() {
+            const status = $el('status');
+            const btn    = $el('downloadBtn');
+            if (btn)    btn.disabled = true;
+            if (status) status.textContent = 'Загрузка потока...';
+
+            if (this._trackMeta?.title || this._trackMeta?.artist)
+                this._renderTrackMeta(this._trackMeta);
+
+            try {
+                // 1. Already in AudioStore (previously captured)
+                const stored = await browserAPI.runtime.sendMessage({
+                    action: 'getTrackByZvukId', zvukId: this._zvukTrackId
+                });
+                if (stored?.ok) { this._applyTrackEntry(stored); return; }
+
+                // 2. Fetch spy already captured the CDN URL from a zvuk.com API response
+                const streamCheck = await browserAPI.runtime.sendMessage({
+                    action: 'getStreamUrlByZvukId', zvukId: this._zvukTrackId
+                });
+                if (streamCheck?.ok) {
+                    const res = await browserAPI.runtime.sendMessage({
+                        action: 'probeCdnForTrack',
+                        zvukId: this._zvukTrackId,
+                        meta: this._trackMeta || {}
+                    });
+                    if (res?.ok) { this._applyTrackEntry(res); return; }
+                }
+
+                // 3. Probe CDN directly — no auth needed, try common suffixes (_2, _1, _3 …)
+                const probe = await browserAPI.runtime.sendMessage({
+                    action: 'probeCdnForTrack',
+                    zvukId: this._zvukTrackId,
+                    meta: this._trackMeta || {}
+                });
+                if (probe?.ok) { this._applyTrackEntry(probe); return; }
+
+                if (status) status.textContent = `Ошибка: ${probe?.error || 'поток недоступен'}`;
+
+            } catch (e) {
+                if (status) status.textContent = `Ошибка: ${e.message}`;
+                console.error('[SingleTrackController] _loadTrackFromZvukId:', e);
+            }
+        }
+
+        _applyTrackEntry(entry) {
+            const status = $el('status');
+            const btn    = $el('downloadBtn');
+            this._latestTrackId = entry.trackId;
+            this._populateQualitySelector(entry.qualities || null);
+            if (btn)    btn.disabled = false;
+            if (status) status.textContent = 'Нажмите «Скачать»';
+            // Prefer DOM-extracted meta (this._trackMeta) over potentially empty AudioStore meta
+            const fallback = entry.meta?.title ? entry.meta : (this._trackMeta || entry.meta);
+            this._fetchAndRenderMeta(entry.masterUrl || entry.url, fallback);
+            if (this._autoDownload) this._startDownload();
+        }
+
         async _fetchAndRenderMeta(hlsUrl, fallbackMeta) {
-            const zvukId = hlsUrl?.match(/\/track\/(\d+)\//)?.[1];
+            const zvukId = hlsUrl?.match(/\/track\/(\d+)/)?.[1];
             if (zvukId) {
                 try {
                     const fresh = await this.service.fetchTrackMeta(zvukId);
@@ -152,6 +217,13 @@
             browserAPI.runtime.onMessage.addListener((msg) => {
                 if (msg.action !== 'trackCaptured') return;
                 if (msg.trackId === this._latestTrackId) return;
+
+                // If waiting for a specific track, only react when URL matches
+                if (this._zvukTrackId) {
+                    const capturedUrl = msg.url || '';
+                    if (capturedUrl && !capturedUrl.includes(`/track/${this._zvukTrackId}/`)) return;
+                }
+
                 this._latestTrackId = msg.trackId;
                 this._populateQualitySelector(msg.qualities || null);
                 const btn = $el('downloadBtn');
@@ -159,6 +231,8 @@
                 const status = $el('status');
                 if (status) status.textContent = 'Нажмите «Скачать»';
                 this._fetchAndRenderMeta(msg.url, msg.meta);
+
+                if (this._autoDownload && this._zvukTrackId) this._startDownload();
             });
         }
 

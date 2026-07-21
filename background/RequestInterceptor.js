@@ -252,7 +252,38 @@
                                 const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url ?? '');
                                 if (url.includes('/keyserver/api/v1/key')) {
                                     const tid = new URL(url).searchParams.get('track_id');
-                                    if (tid) window.__sounddlib_pending_tid = tid;
+                                    if (tid) {
+                                        window.__sounddlib_pending_tid = tid;
+                                        // Capture x-encrypted-key from request headers
+                                        const init = args[1] || {};
+                                        const h = init.headers instanceof Headers
+                                            ? Object.fromEntries(init.headers.entries())
+                                            : (typeof init.headers === 'object' && init.headers ? init.headers : {});
+                                        const xek = h['x-encrypted-key'] || h['X-Encrypted-Key'] || '';
+                                        if (xek) {
+                                            window.__sounddlib_xek_store  = window.__sounddlib_xek_store || {};
+                                            window.__sounddlib_xek_store[tid] = xek;
+                                            window.__sounddlib_latest_xek = xek;
+                                        }
+                                    }
+                                }
+                                // Spy on zvuk.com API responses for CDN stream URLs
+                                if (/zvuk\.com\/(api|gateway|track)/.test(url) && !url.includes('cdn-hls-slicer')) {
+                                    res.clone().text().then(text => {
+                                        if (!text.includes('cdn-hls-slicer.zvuk.com/drm/track/')) return;
+                                        try {
+                                            const found = [];
+                                            const scan = (v) => {
+                                                if (typeof v === 'string' && v.includes('cdn-hls-slicer.zvuk.com/drm/track/')) found.push(v);
+                                                else if (v && typeof v === 'object') Object.values(v).forEach(scan);
+                                            };
+                                            scan(JSON.parse(text));
+                                            for (const streamUrl of found) {
+                                                const m = streamUrl.match(/\/track\/([^/?#]+)/);
+                                                if (m) window.postMessage({ __sounddlib: true, type: 'STREAM_URL_CAPTURED', cdnTrackId: m[1], streamUrl, apiUrl: url }, '*');
+                                            }
+                                        } catch {}
+                                    }).catch(() => {});
                                 }
                             } catch {}
                             return res;

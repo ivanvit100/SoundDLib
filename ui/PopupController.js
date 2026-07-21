@@ -33,7 +33,13 @@
                 const params = new URLSearchParams(location.search);
                 const forcedTabId = parseInt(params.get('tabId')) || null;
                 const autoDownload = params.get('autoDownload') === '1';
+                const zvukTrackId  = params.get('zvukTrackId') || null;
                 const standalone   = forcedTabId !== null || autoDownload;
+                const trackMeta    = zvukTrackId ? {
+                    title:  params.get('trackTitle')  || '',
+                    artist: params.get('trackArtist') || '',
+                    cover:  params.get('trackCover')  || ''
+                } : null;
 
                 let tab;
                 if (forcedTabId) {
@@ -66,7 +72,7 @@
                 } else {
                     await global.TemplateLoader.show('single-track', () => {
                         global.popupSingleTrackController =
-                            new global.SingleTrackController(service, tab.id, { standalone, autoDownload });
+                            new global.SingleTrackController(service, tab.id, { standalone, autoDownload, zvukTrackId, trackMeta });
                     });
                 }
             } catch (e) {

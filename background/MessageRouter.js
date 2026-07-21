@@ -125,6 +125,27 @@
             return true;
         }],
 
+        ['fetchFromTab', (msg, sender, respond) => {
+            (async () => {
+                try {
+                    const [tabsRootA, tabsSubA] = await Promise.all([
+                        browserAPI.tabs.query({ url: '*://zvuk.com/*' }),
+                        browserAPI.tabs.query({ url: '*://*.zvuk.com/*' })
+                    ]);
+                    const tabId = [...(tabsRootA || []), ...(tabsSubA || [])][0]?.id
+                        ?? sender?.tab?.id ?? null;
+                    if (!tabId) { respond({ ok: false, error: 'No zvuk.com tab found' }); return; }
+                    const result = await browserAPI.tabs.sendMessage(tabId, {
+                        action: 'fetchFromTab', url: msg.url, headers: msg.headers || {}
+                    });
+                    respond(result ?? { ok: false, error: 'No response from tab' });
+                } catch (e) {
+                    respond({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }],
+
         ['fetchAudioTrack', (msg, sender, respond) => {
             (async () => {
                 try {
@@ -257,13 +278,24 @@
                                     const spyKey = window.__sounddlib_key_store?.[trackId];
                                     if (spyKey) return { ok: true, data: spyKey, source: 'spy' };
 
+                                    // Use previously captured xek, or generate a fresh random one.
+                                    // The server encrypts the AES key with whatever xek we send,
+                                    // so any value works — we just need to use the same value to decrypt.
+                                    const xekValue =
+                                        window.__sounddlib_xek_store?.[trackId] ||
+                                        window.__sounddlib_latest_xek ||
+                                        Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                                            .map(b => b.toString(16).padStart(2, '0')).join('');
+
                                     try {
-                                        const init = { credentials: 'include', mode: 'same-origin' };
-                                        if (hdrs.length) {
-                                            init.headers = {};
-                                            for (const h of hdrs) init.headers[h.name] = h.value;
-                                        }
-                                        const res = await fetch(url, init);
+                                        const headers = {};
+                                        for (const h of hdrs) headers[h.name] = h.value;
+                                        headers['x-encrypted-key'] = xekValue;
+                                        const res = await fetch(url, {
+                                            credentials: 'include',
+                                            mode: 'same-origin',
+                                            headers
+                                        });
                                         if (!res.ok) return { ok: false, status: res.status };
                                         const buf = await res.arrayBuffer();
                                         const ourData = Array.from(new Uint8Array(buf));
@@ -272,6 +304,7 @@
                                             ok: true,
                                             data: ourData,
                                             source: 'fetch',
+                                            xekValue,
                                             nativeRaw: nativeData ?? null
                                         };
                                     } catch (e) {
@@ -281,7 +314,8 @@
                                 args: [trackId, keyUrl, extraHeaders]
                             });
                             const result = results?.[0]?.result;
-                            if (result?.ok) result.xekValue = xek?.value ?? '';
+                            // Prefer xekValue returned from MAIN world; fall back to encryptedKeyStore
+                            if (result?.ok && !result.xekValue) result.xekValue = xek?.value ?? '';
                             console.log('[fetchKeyFromTab] executeScript result:', JSON.stringify(result));
                             if (result) { respond(result); return; }
                         } catch (e) {
@@ -295,6 +329,108 @@
                     });
                     console.log('[fetchKeyFromTab] relay result:', JSON.stringify(result));
                     respond(result ?? { ok: false, error: 'No response from content script' });
+                } catch (e) {
+                    respond({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }],
+
+        ['getTrackByZvukId', (msg, _sender, respond) => {
+            const entry = store.findByZvukId(msg.zvukId);
+            if (!entry) { respond({ ok: false }); return true; }
+            respond({
+                ok: true,
+                trackId: entry.id,
+                type: entry.type || 'audio',
+                mimeType: entry.mimeType,
+                masterUrl: entry.masterUrl || null,
+                url: entry.url || null,
+                qualities: entry.qualities || null,
+                meta: entry.meta
+            });
+            return true;
+        }],
+
+        ['streamUrlCaptured', (msg, _sender, respond) => {
+            if (!globalThis.streamUrlStore) globalThis.streamUrlStore = new Map();
+            globalThis.streamUrlStore.set(msg.cdnTrackId, msg.streamUrl);
+            console.log('[StreamUrlStore] Captured CDN ID:', msg.cdnTrackId);
+            respond({ ok: true });
+            return true;
+        }],
+
+        ['getStreamUrlByZvukId', (msg, _sender, respond) => {
+            const su = globalThis.streamUrlStore;
+            if (!su) { respond({ ok: false }); return true; }
+            const prefix = msg.zvukId + '_';
+            for (const [cdnId, streamUrl] of su) {
+                if (cdnId === msg.zvukId || cdnId.startsWith(prefix)) {
+                    respond({ ok: true, streamUrl, cdnTrackId: cdnId });
+                    return true;
+                }
+            }
+            respond({ ok: false });
+            return true;
+        }],
+
+        ['probeCdnForTrack', (msg, _sender, respond) => {
+            (async () => {
+                try {
+                    const { zvukId, meta } = msg;
+                    const registry = globalThis.serviceRegistry;
+                    const service  = registry?.getAllServices?.().find(
+                        s => s.constructor.capturePatterns?.some(p => p.includes('cdn-hls-slicer'))
+                    );
+
+                    for (const suffix of ['2', '1', '3', '4', '0']) {
+                        const url = `https://cdn-hls-slicer.zvuk.com/drm/track/${zvukId}_${suffix}/master.m3u8`;
+                        try {
+                            const res = await fetch(url, {
+                                credentials: isFirefox ? 'include' : 'omit',
+                                headers: { 'Referer': 'https://zvuk.com/', 'Origin': 'https://zvuk.com' }
+                            });
+                            if (!res.ok) continue;
+                            const text = await res.text();
+                            if (!text.startsWith('#EXTM3U')) continue;
+
+                            const entry = service?.constructor?.captureFromUrl?.(url, text);
+                            if (!entry) continue;
+
+                            const trackId  = `zvuk_${Date.now()}`;
+                            const actualId = store.put(trackId, { id: trackId, capturedAt: Date.now(), ...entry });
+                            if (meta) store.updateMeta(actualId, meta);
+
+                            const stored = store.get(actualId);
+                            await notifyPopup({
+                                action: 'trackCaptured', trackId: actualId,
+                                meta: stored?.meta || {}, url,
+                                type: 'hls', qualities: entry.qualities || null
+                            });
+                            respond({ ok: true, trackId: actualId, masterUrl: url, qualities: entry.qualities || null, suffix });
+                            return;
+                        } catch {}
+                    }
+                    respond({ ok: false, error: 'All CDN suffixes returned non-200' });
+                } catch (e) {
+                    respond({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }],
+
+        ['openDownloadWindowForTrack', (msg, sender, respond) => {
+            (async () => {
+                try {
+                    const tabId = sender?.tab?.id;
+                    const qs = new URLSearchParams({ autoDownload: '1', zvukTrackId: msg.zvukTrackId });
+                    if (tabId)       qs.set('tabId',       String(tabId));
+                    if (msg.title)   qs.set('trackTitle',  msg.title);
+                    if (msg.artist)  qs.set('trackArtist', msg.artist);
+                    if (msg.cover)   qs.set('trackCover',  msg.cover);
+                    respond({ ok: await openPopupWindow(
+                        browserAPI.runtime.getURL(`popup.html?${qs}`)
+                    )});
                 } catch (e) {
                     respond({ ok: false, error: String(e) });
                 }

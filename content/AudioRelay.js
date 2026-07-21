@@ -24,6 +24,15 @@
                 meta: payload.meta || {}
             }).catch(() => {});
         }
+
+        if (type === 'STREAM_URL_CAPTURED') {
+            console.log('[SoundDLib] Stream URL captured from', payload.apiUrl, '→', payload.cdnTrackId);
+            api.runtime.sendMessage({
+                action: 'streamUrlCaptured',
+                cdnTrackId: payload.cdnTrackId,
+                streamUrl:  payload.streamUrl
+            }).catch(() => {});
+        }
     });
 
     api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -40,6 +49,44 @@
                     if (!res.ok) { sendResponse({ ok: false, status: res.status }); return; }
                     const buf = await res.arrayBuffer();
                     sendResponse({ ok: true, data: Array.from(new Uint8Array(buf)) });
+                } catch (e) {
+                    sendResponse({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }
+
+        if (message.action === 'playTrackById') {
+            const wrapper = document.querySelector(
+                `[data-entity-id="${message.zvukTrackId}"][role="button"]`
+            );
+            if (!wrapper) { sendResponse({ ok: false, reason: 'no-wrapper' }); return false; }
+
+            const isOurBtn = b => b.dataset.sdlTracklistDl || b.dataset.sdlDownload;
+            const playBtn =
+                wrapper.querySelector('[class*="PlayButton_"]') ||
+                wrapper.querySelector('[class*="Cover_cover"] button') ||
+                wrapper.querySelector('[class*="Cover_playButton"]') ||
+                wrapper.querySelector('[class*="play"]') ||
+                Array.from(wrapper.querySelectorAll('button')).find(b => !isOurBtn(b));
+
+            if (playBtn) playBtn.click();
+            else wrapper.click();   // fallback: row itself has role="button" and triggers playback
+
+            sendResponse({ ok: true });
+            return false;
+        }
+
+        if (message.action === 'fetchFromTab') {
+            (async () => {
+                try {
+                    const res = await fetch(message.url, {
+                        credentials: 'include',
+                        headers: message.headers || {}
+                    });
+                    const body = await res.text();
+                    sendResponse({ ok: res.ok, status: res.status, body,
+                        contentType: res.headers.get('content-type') || '' });
                 } catch (e) {
                     sendResponse({ ok: false, error: String(e) });
                 }
@@ -154,6 +201,69 @@
         return false;
     });
 
+    // === Inject download buttons into zvuk.com track lists ===
+
+    (function sdlInjectTrackListStyle() {
+        if (document.getElementById('__sdl_tracklist_style')) return;
+        const s = document.createElement('style');
+        s.id = '__sdl_tracklist_style';
+        s.textContent =
+            '[data-entity-id][role="button"]:not(:hover) button[data-sdl-tracklist-dl]{display:none!important}' +
+            '[data-entity-id][role="button"]:hover button[data-sdl-tracklist-dl]{display:inline-flex!important}';
+        document.head.appendChild(s);
+    })();
+
+    function sdlCreateTrackListBtn(zvukTrackId, meta) {
+        const btn = document.createElement('button');
+        btn.dataset.sdlTracklistDl = 'true';
+        btn.setAttribute('data-sdl-tracklist-dl', 'true');
+        btn.title = 'Скачать трек (SoundDLib)';
+        btn.style.cssText = [
+            'background:none', 'border:none', 'cursor:pointer',
+            'padding:4px', 'display:none', 'align-items:center',
+            'justify-content:center', 'flex-shrink:0', 'opacity:0.7',
+            'transition:opacity 0.15s'
+        ].join(';');
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"' +
+            ' stroke="#bdbdbd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+            '<polyline points="7 10 12 15 17 10"/>' +
+            '<line x1="12" y1="15" x2="12" y2="3"/></svg>';
+        const svg = () => btn.querySelector('svg');
+        btn.addEventListener('mouseover', () => { svg()?.setAttribute('stroke', '#fff'); btn.style.opacity = '1'; });
+        btn.addEventListener('mouseout',  () => { svg()?.setAttribute('stroke', '#bdbdbd'); btn.style.opacity = '0.7'; });
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            api.runtime.sendMessage({
+                action: 'openDownloadWindowForTrack',
+                zvukTrackId,
+                title:  meta?.title  || '',
+                artist: meta?.artist || '',
+                cover:  meta?.cover  || ''
+            }).catch(() => {});
+        });
+        return btn;
+    }
+
+    function sdlInjectTrackList() {
+        for (const wrapper of document.querySelectorAll('[data-entity-id][role="button"]')) {
+            const controls = wrapper.querySelector('[class*="Controls_controls__"]');
+            if (!controls || controls.querySelector('[data-sdl-tracklist-dl]')) continue;
+            const zvukTrackId = wrapper.getAttribute('data-entity-id');
+            if (!zvukTrackId) continue;
+
+            const title  = wrapper.querySelector('[class*="Info_titleInner__"]')?.textContent?.trim() || '';
+            const artist = wrapper.querySelector('[class*="Info_description___"]')?.textContent?.trim() || '';
+            const cover  = wrapper.querySelector('[class*="Cover_img__"] img, [class*="Cover_cover__"] img')?.src || '';
+
+            const duration = controls.querySelector('[class*="Controls_duration__"]');
+            const btn = sdlCreateTrackListBtn(zvukTrackId, { title, artist, cover });
+            if (duration) controls.insertBefore(btn, duration);
+            else controls.appendChild(btn);
+        }
+    }
+
     // === Inject download button into zvuk.com mini/full player ===
 
     function sdlCreateBtn() {
@@ -203,9 +313,10 @@
     let _sdlTimer = null;
     new MutationObserver(() => {
         clearTimeout(_sdlTimer);
-        _sdlTimer = setTimeout(sdlInject, 250);
+        _sdlTimer = setTimeout(() => { sdlInject(); sdlInjectTrackList(); }, 250);
     }).observe(document.body, { childList: true, subtree: true });
     sdlInject();
+    sdlInjectTrackList();
 
     console.log('[SoundDLib] AudioRelay active');
 })();
