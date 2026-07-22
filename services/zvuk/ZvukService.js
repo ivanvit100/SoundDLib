@@ -1,6 +1,5 @@
 /**
  * SoundDLib — zvuk.com service
- * API endpoints derived from network inspection of zvuk.com
  * @module services/zvuk/ZvukService
  * @author ivanvit
  * @version 0.0.1
@@ -9,6 +8,23 @@
 'use strict';
 
 (function(global) {
+    const GQL_PLAYLIST_TRACKS = `
+query getPlaylistTracks($id: ID!, $limit: Int = 50, $offset: Int = 0) {
+  playlistTracks(id: $id, limit: $limit, offset: $offset) {
+    id title duration hasFlac explicit availability zchan
+    artists { id title image { src } }
+    release { id title image { src } }
+  }
+}`.trim();
+
+    const GQL_PLAYLIST_META = `
+query getPlaylist($id: ID!) {
+  playlist(id: $id) {
+    id title tracksCount
+    image { src }
+  }
+}`.trim();
+
     const PAGE_LIMIT = 50;
 
     class ZvukService extends global.BaseAudioService {
@@ -91,59 +107,93 @@
             return downloader.download(qualityUrl, api, onProgress);
         }
 
+        async graphqlFetch(query, variables, operationName) {
+            return this.apiFetch(this.config.graphqlUrl, {
+                method: 'POST',
+                body: JSON.stringify({ query, variables, operationName }),
+                headers: { 'content-type': 'application/json' }
+            });
+        }
+
         async fetchTrackMeta(trackId) {
-            const data = await this.apiFetch(
-                `${this.config.apiUrl}/track/${trackId}`
-            );
-            return this._normalizeTrack(data.result ?? data);
+            const data = await this.apiFetch(`${this.config.apiUrl}/track/${trackId}`);
+            return this._normalizeTrackRest(data.result ?? data);
         }
 
         async fetchPlaylistMeta(playlistId) {
-            const data = await this.apiFetch(
-                `${this.config.apiUrl}/playlist/${playlistId}`
+            const data = await this.graphqlFetch(
+                GQL_PLAYLIST_META,
+                { id: String(playlistId) },
+                'getPlaylist'
             );
-            const p = data.result ?? data;
+            const p = data?.data?.playlist ?? {};
             return {
-                id: p.id,
-                title: p.title ?? p.name ?? 'Плейлист',
-                cover: p.image ?? p.cover ?? null,
-                trackCount: p.tracks_count ?? p.trackCount ?? null
+                id: p.id ?? playlistId,
+                title: p.title ?? 'Плейлист',
+                cover: p.image?.src?.replace('{size}', 'large') ?? null,
+                trackCount: p.tracksCount ?? null
             };
         }
 
         async fetchAllPlaylistTracks(playlistId, onProgress) {
             const tracks = [];
             let offset = 0;
-            let total = null;
 
             do {
-                const data = await this.apiFetch(
-                    `${this.config.apiUrl}/playlist/${playlistId}/tracks` +
-                    `?offset=${offset}&limit=${PAGE_LIMIT}`
+                const data = await this.graphqlFetch(
+                    GQL_PLAYLIST_TRACKS,
+                    { id: String(playlistId), limit: PAGE_LIMIT, offset },
+                    'getPlaylistTracks'
                 );
-
-                const result = data.result ?? data;
-                const batch = Array.isArray(result.tracks)
-                    ? result.tracks
-                    : Array.isArray(result) ? result : [];
-
-                if (total === null)
-                    total = result.total ?? result.tracks_count ?? batch.length;
+                const batch = data?.data?.playlistTracks ?? [];
 
                 for (const t of batch)
-                    tracks.push(this._normalizeTrack(t));
+                    tracks.push(this._normalizeTrackGql(t));
 
                 offset += batch.length;
-                if (onProgress) onProgress(tracks.length, total);
+                if (onProgress) onProgress(tracks.length, null);
 
                 if (batch.length < PAGE_LIMIT) break;
                 await this.delay(150);
-            } while (tracks.length < total);
+            } while (true);
 
             return tracks;
         }
 
-        _coverUrl(raw) {
+        _normalizeTrackGql(raw) {
+            const artist = Array.isArray(raw.artists)
+                ? raw.artists.map(a => a.title).join(', ')
+                : '';
+            const cover = raw.release?.image?.src?.replace('{size}', 'large')
+                ?? raw.artists?.[0]?.image?.src?.replace('{size}', 'large')
+                ?? null;
+            return {
+                id: String(raw.id),
+                title: raw.title ?? 'Unknown',
+                artist: artist || 'Unknown',
+                album: raw.release?.title ?? '',
+                duration: raw.duration ?? 0,
+                cover,
+                streamUrl: null
+            };
+        }
+
+        _normalizeTrackRest(raw) {
+            const artists = Array.isArray(raw.artists)
+                ? raw.artists.map(a => a.name ?? a).join(', ')
+                : (raw.artist ?? '');
+            return {
+                id: raw.id,
+                title: raw.title ?? raw.name ?? 'Unknown',
+                artist: artists || 'Unknown',
+                album: raw.release?.title ?? raw.album ?? '',
+                duration: raw.duration ?? 0,
+                cover: this._coverUrlRest(raw),
+                streamUrl: raw.stream ?? raw.stream_url ?? raw.audio ?? null
+            };
+        }
+
+        _coverUrlRest(raw) {
             for (const v of [raw.image, raw.cover, raw.release?.image]) {
                 if (typeof v === 'string' && v.startsWith('http')) return v;
             }
@@ -152,22 +202,6 @@
             if (raw.image && raw.id)
                 return `https://cdn-image.zvuk.com/pic?hash=${raw.image}&id=${raw.id}&size=large&type=track`;
             return null;
-        }
-
-        _normalizeTrack(raw) {
-            const artists = Array.isArray(raw.artists)
-                ? raw.artists.map(a => a.name ?? a).join(', ')
-                : (raw.artist ?? '');
-
-            return {
-                id: raw.id,
-                title: raw.title ?? raw.name ?? 'Unknown',
-                artist: artists || 'Unknown',
-                album: raw.release?.title ?? raw.album ?? '',
-                duration: raw.duration ?? 0,
-                cover: this._coverUrl(raw),
-                streamUrl: raw.stream ?? raw.stream_url ?? raw.audio ?? null
-            };
         }
     }
 

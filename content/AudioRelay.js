@@ -310,13 +310,47 @@
             mobile.insertBefore(sdlCreateBtn(), mobile.lastElementChild);
     }
 
+    // === Inject download button into zvuk.com playlist header ===
+
+    function sdlInjectPlaylistHeaderBtn() {
+        if (!/\/(playlist|collection)\/\d+/.test(location.pathname)) return;
+        const wrapper = document.querySelector('[class*="HeaderButtons_wrapper"]');
+        if (!wrapper || wrapper.querySelector('[data-sdl-playlist-dl]')) return;
+
+        const btn = document.createElement('div');
+        btn.dataset.sdlPlaylistDl = 'true';
+        btn.title = 'Скачать плейлист (SoundDLib)';
+
+        const refBtn = wrapper.querySelector('[class*="GeneralButton_button"]');
+        if (refBtn) btn.className = refBtn.className;
+
+        btn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
+        btn.innerHTML =
+            '<span style="--size: 28rem; --gutter: 0rem;" class="iconColor__primary colt-desktop__root---ce292">' +
+            '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+            ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+            '<polyline points="7 10 12 15 17 10"/>' +
+            '<line x1="12" y1="15" x2="12" y2="3"/></svg></span>';
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            api.runtime.sendMessage({ action: 'openDownloadWindow' }).catch(() => {});
+        });
+
+        const cmButtons = wrapper.querySelector('[class*="CmButtons_wrapper"]');
+        if (cmButtons) wrapper.insertBefore(btn, cmButtons);
+        else wrapper.appendChild(btn);
+    }
+
     let _sdlTimer = null;
     new MutationObserver(() => {
         clearTimeout(_sdlTimer);
-        _sdlTimer = setTimeout(() => { sdlInject(); sdlInjectTrackList(); }, 250);
+        _sdlTimer = setTimeout(() => { sdlInject(); sdlInjectTrackList(); sdlInjectPlaylistHeaderBtn(); }, 250);
     }).observe(document.body, { childList: true, subtree: true });
     sdlInject();
     sdlInjectTrackList();
+    sdlInjectPlaylistHeaderBtn();
 
     console.log('[SoundDLib] AudioRelay active');
 })();

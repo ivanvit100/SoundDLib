@@ -20,6 +20,7 @@
             this.manager = new global.PlaylistManager();
             this.converter = new global.AudioConverter();
             this._tracks = [];
+            this._title = 'playlist';
             this._isDownloading = false;
             this._init();
         }
@@ -44,7 +45,12 @@
                     if (p && total) p.value = Math.round((loaded / total) * 100);
                 });
 
-                this._tracks = await this.manager.loadPlaylist(this.service, this.playlistId);
+                [this._tracks] = await Promise.all([
+                    this.manager.loadPlaylist(this.service, this.playlistId),
+                    this.service.fetchPlaylistMeta(this.playlistId)
+                        .then(m => { this._title = m.title || 'playlist'; })
+                        .catch(() => {})
+                ]);
                 this._renderTrackList();
                 this._showPhase('ready');
             } catch (e) {
@@ -84,13 +90,23 @@
             if (count) count.textContent = `${this._tracks.length} треков`;
         }
 
-        async _startDownload() {
+        async _startDownload(zip = false) {
             if (this._isDownloading || !this._tracks.length) return;
             this._isDownloading = true;
             const format = $el('formatSelector')?.value || 'mp3';
 
             this._showPhase('downloading');
+            this._bindDownloadEvents();
 
+            try {
+                if (zip)
+                    await this.manager.downloadAllAsZip(this._tracks, format, this.converter, this._title, this.service);
+                else
+                    await this.manager.downloadAll(this._tracks, format, this.converter, this.service);
+            } catch {}
+        }
+
+        _bindDownloadEvents() {
             this.manager.eventBus.on('download:progress', ({ message, percent, trackIndex }) => {
                 const s = $el('status');
                 const p = $el('progress');
@@ -115,10 +131,6 @@
                 this._showPhase('ready');
                 if (global.popupController) global.popupController.showError(error.message);
             });
-
-            try {
-                await this.manager.downloadAll(this._tracks, format, this.converter);
-            } catch {}
         }
 
         _highlightTrack(index) {
@@ -131,22 +143,21 @@
         }
 
         _showPhase(phase) {
-            const discovery = $el('discoverySection');
-            const trackList = $el('trackListSection');
-            const controls  = $el('downloadControls');
-            const btn       = $el('downloadBtn');
-            const progress  = $el('progress');
-            const fmtC      = $el('formatContainer');
-            const doneMsg   = $el('doneSection');
+            const discovery  = $el('discoverySection');
+            const trackList  = $el('trackListSection');
+            const controls   = $el('downloadControls');
+            const dlBtns     = $el('downloadButtons');
+            const progress   = $el('progress');
+            const fmtC       = $el('formatContainer');
+            const doneMsg    = $el('doneSection');
 
             const show = (el, v) => { if (el) el.style.display = v ? 'block' : 'none'; };
-
             const flex = (el, v) => { if (el) el.style.display = v ? 'flex' : 'none'; };
 
             show(discovery,  phase === 'discovering');
             show(trackList,  phase === 'ready' || phase === 'downloading' || phase === 'done');
             show(fmtC,       phase === 'ready');
-            show(btn,        phase === 'ready');
+            flex(dlBtns,     phase === 'ready');
             show(progress,   phase === 'downloading');
             flex(controls,   phase === 'downloading');
             show(doneMsg,    phase === 'done');
@@ -168,7 +179,8 @@
         }
 
         _bindEvents() {
-            $el('downloadBtn')?.addEventListener('click',  () => this._startDownload());
+            $el('downloadBtn')?.addEventListener('click',    () => this._startDownload(false));
+            $el('downloadZipBtn')?.addEventListener('click', () => this._startDownload(true));
             $el('pauseBtn')?.addEventListener('click',  () => this._togglePause());
             $el('stopBtn')?.addEventListener('click',   () => {
                 this.manager.stop();

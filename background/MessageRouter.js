@@ -374,6 +374,41 @@
             return true;
         }],
 
+        ['resolveCdnUrl', (msg, _sender, respond) => {
+            (async () => {
+                try {
+                    const { zvukId } = msg;
+                    const registry = globalThis.serviceRegistry;
+                    const service  = registry?.getAllServices?.().find(
+                        s => s.constructor.capturePatterns?.some(p => p.includes('cdn-hls-slicer'))
+                    );
+
+                    for (const suffix of ['2', '1', '3', '4', '0']) {
+                        const url = `https://cdn-hls-slicer.zvuk.com/drm/track/${zvukId}_${suffix}/master.m3u8`;
+                        try {
+                            const res = await fetch(url, {
+                                credentials: isFirefox ? 'include' : 'omit',
+                                headers: { 'Referer': 'https://zvuk.com/', 'Origin': 'https://zvuk.com' }
+                            });
+                            if (!res.ok) continue;
+                            const text = await res.text();
+                            if (!text.startsWith('#EXTM3U')) continue;
+
+                            const entry = service?.constructor?.captureFromUrl?.(url, text);
+                            if (!entry?.qualities?.length) continue;
+
+                            respond({ ok: true, masterUrl: url, qualities: entry.qualities });
+                            return;
+                        } catch {}
+                    }
+                    respond({ ok: false, error: `All CDN suffixes failed for ${zvukId}` });
+                } catch (e) {
+                    respond({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }],
+
         ['probeCdnForTrack', (msg, _sender, respond) => {
             (async () => {
                 try {
