@@ -36,6 +36,11 @@
         }
 
         _ensureLoaded() {
+            if (this._needsRecreation) {
+                this._ffmpeg = null;
+                this._loadPromise = null;
+                this._needsRecreation = false;
+            }
             if (this._ffmpeg?.isLoaded()) return;
             if (this._loadPromise) return this._loadPromise;
 
@@ -94,20 +99,28 @@
 
             this._ffmpeg.FS('writeFile', `in.${inputExt}`, bytes);
 
+            let output;
             try {
-                await this._ffmpeg.run(
-                    '-i', `in.${inputExt}`,
-                    ...codecArgs,
-                    `out.${outputExt}`
-                );
-                const output = this._ffmpeg.FS('readFile', `out.${outputExt}`);
-                return output.buffer;
+                try {
+                    await this._ffmpeg.run(
+                        '-i', `in.${inputExt}`,
+                        ...codecArgs,
+                        `out.${outputExt}`
+                    );
+                } catch (e) {
+                    // Emscripten throws ExitStatus(0) on normal ffmpeg completion.
+                    // The internal 'running' flag (closure variable in minified code)
+                    // can't be reset externally — recreate the instance for next call.
+                    if (!(e?.name === 'ExitStatus' && e?.status === 0)) throw e;
+                    this._needsRecreation = true;
+                }
+                output = this._ffmpeg.FS('readFile', `out.${outputExt}`);
             } finally {
                 try { this._ffmpeg.FS('unlink', `in.${inputExt}`); } catch {}
-
                 try { this._ffmpeg.FS('unlink', `out.${outputExt}`); } catch {}
                 if (onProgress) this._ffmpeg.setProgress(() => {});
             }
+            return output.buffer;
         }
     }
 

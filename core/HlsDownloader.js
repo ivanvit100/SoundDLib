@@ -75,21 +75,21 @@
 
             const buffers = [initData, firstSegDecrypted];
 
-            for (let i = 1; i < segments.length; i++) {
-                onProgress?.('segment', i, segments.length);
-
-                const segResp = await api.runtime.sendMessage({ action: 'fetchBinary', url: segments[i] });
-                if (!segResp?.ok)
-                    throw new Error(`Сегмент ${i + 1}/${segments.length} не загрузился (${segResp?.status ?? 'network error'})`);
-
-                const segBytes = new Uint8Array(segResp.data);
-                console.log('[HlsDownloader] segment', i, 'size:', segBytes.length, 'mod16:', segBytes.length % 16);
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: 'AES-CBC', iv: ivArray },
-                    cryptoKey,
-                    segBytes.buffer
-                );
-                buffers.push(new Uint8Array(decrypted));
+            const BATCH = 5;
+            for (let start = 1; start < segments.length; start += BATCH) {
+                onProgress?.('segment', start, segments.length);
+                const slice = segments.slice(start, start + BATCH);
+                const decryptedBatch = await Promise.all(slice.map(async (segUrl, j) => {
+                    const segResp = await api.runtime.sendMessage({ action: 'fetchBinary', url: segUrl });
+                    if (!segResp?.ok)
+                        throw new Error(`Сегмент ${start + j + 1}/${segments.length} не загрузился (${segResp?.status ?? 'network error'})`);
+                    return new Uint8Array(await crypto.subtle.decrypt(
+                        { name: 'AES-CBC', iv: ivArray },
+                        cryptoKey,
+                        new Uint8Array(segResp.data).buffer
+                    ));
+                }));
+                buffers.push(...decryptedBatch);
             }
 
             const totalLen = buffers.reduce((s, b) => s + b.length, 0);

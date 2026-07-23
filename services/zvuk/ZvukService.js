@@ -9,7 +9,7 @@
 
 (function(global) {
     const GQL_PLAYLIST_TRACKS = `
-query getPlaylistTracks($id: ID!, $limit: Int = 50, $offset: Int = 0) {
+query getPlaylistTracks($id: ID!, $limit: Int = 30, $offset: Int = 0) {
   playlistTracks(id: $id, limit: $limit, offset: $offset) {
     id title duration hasFlac explicit availability zchan
     artists { id title image { src } }
@@ -25,7 +25,7 @@ query getPlaylist($id: ID!) {
   }
 }`.trim();
 
-    const PAGE_LIMIT = 50;
+    const PAGE_LIMIT = 30;
 
     class ZvukService extends global.BaseAudioService {
         constructor() {
@@ -153,7 +153,7 @@ query getPlaylist($id: ID!) {
                 offset += batch.length;
                 if (onProgress) onProgress(tracks.length, null);
 
-                if (batch.length < PAGE_LIMIT) break;
+                if (batch.length === 0) break;
                 await this.delay(150);
             } while (true);
 

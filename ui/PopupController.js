@@ -65,9 +65,11 @@
 
                 if (service.constructor.isPlaylistPage(url)) {
                     const playlistId = service.extractPlaylistId(url);
+                    const autoStart  = params.get('playlistAutoDownload') === '1';
+                    const zip        = params.get('playlistZip') === '1';
                     await global.TemplateLoader.show('playlist', () => {
                         global.popupPlaylistController =
-                            new global.PlaylistController(service, playlistId);
+                            new global.PlaylistController(service, playlistId, { autoStart, zip });
                     });
                 } else {
                     await global.TemplateLoader.show('single-track', () => {

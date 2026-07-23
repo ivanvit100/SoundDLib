@@ -53,11 +53,23 @@
                 });
 
                 try {
+                    const onSeg = (type, cur, segTotal) => {
+                        let hint = '';
+                        if (type === 'key')     hint = ' · ключ…';
+                        else if (type === 'init')    hint = ' · инит…';
+                        else if (type === 'segment') hint = ` · сегмент ${cur}/${segTotal}`;
+                        this.eventBus.emit('download:progress', {
+                            message: `${i + 1}/${total}: ${label}${hint}`,
+                            percent: Math.floor((i / total) * 80),
+                            trackIndex: i
+                        });
+                    };
+
                     const { buffer: inputBuffer, mimeType: inputMimeType } =
-                        await this._fetchTrackBuffer(track, service, api);
+                        await this._fetchTrackBuffer(track, service, api, onSeg);
 
                     this.eventBus.emit('download:progress', {
-                        message: `Конвертация ${i + 1}/${total}...`,
+                        message: `${i + 1}/${total}: ${label} · конвертация…`,
                         percent: Math.floor((i / total) * 80) + 5
                     });
 
@@ -73,7 +85,7 @@
                     failed++;
                 }
 
-                await this._delay(300);
+                await this._delay(50);
             }
 
             global.DownloadHistory.add({
@@ -132,11 +144,23 @@
                 });
 
                 try {
+                    const onSeg = (type, cur, segTotal) => {
+                        let hint = '';
+                        if (type === 'key')     hint = ' · ключ…';
+                        else if (type === 'init')    hint = ' · инит…';
+                        else if (type === 'segment') hint = ` · сегмент ${cur}/${segTotal}`;
+                        this.eventBus.emit('download:progress', {
+                            message: `${i + 1}/${total}: ${label}${hint}`,
+                            percent: Math.floor((i / total) * 80),
+                            trackIndex: i
+                        });
+                    };
+
                     const { buffer: inputBuffer, mimeType: inputMimeType } =
-                        await this._fetchTrackBuffer(track, service, api);
+                        await this._fetchTrackBuffer(track, service, api, onSeg);
 
                     this.eventBus.emit('download:progress', {
-                        message: `Конвертация ${i + 1}/${total}...`,
+                        message: `${i + 1}/${total}: ${label} · конвертация…`,
                         percent: Math.floor((i / total) * 80) + 5
                     });
 
@@ -158,7 +182,7 @@
                     failed++;
                 }
 
-                await this._delay(300);
+                await this._delay(50);
             }
 
             zip.end();
@@ -182,7 +206,7 @@
             return { done, failed, total };
         }
 
-        async _fetchTrackBuffer(track, service, api) {
+        async _fetchTrackBuffer(track, service, api, onSegment) {
             if (track.streamUrl) {
                 const resp = await api.runtime.sendMessage({ action: 'fetchAudioTrack', url: track.streamUrl });
                 if (!resp?.ok) throw new Error(resp?.error || `HTTP error`);
@@ -204,7 +228,7 @@
                 { type: 'hls', masterUrl: probe.masterUrl, qualities: probe.qualities },
                 { qualityUrl: best.url },
                 api,
-                () => {}
+                onSegment || (() => {})
             );
             return { buffer: result.data, mimeType: result.mimeType };
         }

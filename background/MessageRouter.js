@@ -269,6 +269,26 @@
                         return;
                     }
 
+                    // Fast path: content script is already loaded — no injection overhead.
+                    try {
+                        const csResult = await browserAPI.tabs.sendMessage(tabId, {
+                            action: 'fetchKeyFromMainWorld',
+                            url: keyUrl,
+                            extraHeaders,
+                            xekValue: xek?.value ?? ''
+                        });
+                        if (csResult?.ok) {
+                            if (csResult?.ok && !csResult.xekValue) csResult.xekValue = xek?.value ?? '';
+                            console.log('[fetchKeyFromTab] content-script result:', JSON.stringify(csResult));
+                            respond(csResult);
+                            return;
+                        }
+                        console.warn('[fetchKeyFromTab] content-script returned not-ok:', csResult?.status);
+                    } catch (e) {
+                        console.warn('[fetchKeyFromTab] content-script sendMessage failed:', String(e));
+                    }
+
+                    // Fallback: inject into MAIN world to access window.__sounddlib_key_store
                     if (browserAPI.scripting?.executeScript) {
                         try {
                             const results = await browserAPI.scripting.executeScript({
@@ -278,9 +298,6 @@
                                     const spyKey = window.__sounddlib_key_store?.[trackId];
                                     if (spyKey) return { ok: true, data: spyKey, source: 'spy' };
 
-                                    // Use previously captured xek, or generate a fresh random one.
-                                    // The server encrypts the AES key with whatever xek we send,
-                                    // so any value works — we just need to use the same value to decrypt.
                                     const xekValue =
                                         window.__sounddlib_xek_store?.[trackId] ||
                                         window.__sounddlib_latest_xek ||
@@ -291,22 +308,12 @@
                                         const headers = {};
                                         for (const h of hdrs) headers[h.name] = h.value;
                                         headers['x-encrypted-key'] = xekValue;
-                                        const res = await fetch(url, {
-                                            credentials: 'include',
-                                            mode: 'same-origin',
-                                            headers
-                                        });
+                                        const res = await fetch(url, { credentials: 'include', headers });
                                         if (!res.ok) return { ok: false, status: res.status };
                                         const buf = await res.arrayBuffer();
                                         const ourData = Array.from(new Uint8Array(buf));
                                         const nativeData = window.__sounddlib_raw_key_store?.[trackId];
-                                        return {
-                                            ok: true,
-                                            data: ourData,
-                                            source: 'fetch',
-                                            xekValue,
-                                            nativeRaw: nativeData ?? null
-                                        };
+                                        return { ok: true, data: ourData, source: 'fetch', xekValue, nativeRaw: nativeData ?? null };
                                     } catch (e) {
                                         return { ok: false, error: String(e) };
                                     }
@@ -314,7 +321,6 @@
                                 args: [trackId, keyUrl, extraHeaders]
                             });
                             const result = results?.[0]?.result;
-                            // Prefer xekValue returned from MAIN world; fall back to encryptedKeyStore
                             if (result?.ok && !result.xekValue) result.xekValue = xek?.value ?? '';
                             console.log('[fetchKeyFromTab] executeScript result:', JSON.stringify(result));
                             if (result) { respond(result); return; }
@@ -323,12 +329,7 @@
                         }
                     }
 
-                    console.log('[fetchKeyFromTab] falling back to fetchKeyFromMainWorld');
-                    const result = await browserAPI.tabs.sendMessage(tabId, {
-                        action: 'fetchKeyFromMainWorld', url: keyUrl, extraHeaders
-                    });
-                    console.log('[fetchKeyFromTab] relay result:', JSON.stringify(result));
-                    respond(result ?? { ok: false, error: 'No response from content script' });
+                    respond({ ok: false, error: 'All key fetch methods failed' });
                 } catch (e) {
                     respond({ ok: false, error: String(e) });
                 }
@@ -383,21 +384,24 @@
                         s => s.constructor.capturePatterns?.some(p => p.includes('cdn-hls-slicer'))
                     );
 
-                    for (const suffix of ['2', '1', '3', '4', '0']) {
+                    const probe = async (suffix) => {
                         const url = `https://cdn-hls-slicer.zvuk.com/drm/track/${zvukId}_${suffix}/master.m3u8`;
+                        const res = await fetch(url, {
+                            credentials: isFirefox ? 'include' : 'omit',
+                            headers: { 'Referer': 'https://zvuk.com/', 'Origin': 'https://zvuk.com' }
+                        });
+                        if (!res.ok) throw new Error('not ok');
+                        const text = await res.text();
+                        if (!text.startsWith('#EXTM3U')) throw new Error('not m3u8');
+                        const entry = service?.constructor?.captureFromUrl?.(url, text);
+                        if (!entry?.qualities?.length) throw new Error('no qualities');
+                        return { masterUrl: url, qualities: entry.qualities };
+                    };
+
+                    for (const suffix of ['2', '3', '1', '4', '0']) {
                         try {
-                            const res = await fetch(url, {
-                                credentials: isFirefox ? 'include' : 'omit',
-                                headers: { 'Referer': 'https://zvuk.com/', 'Origin': 'https://zvuk.com' }
-                            });
-                            if (!res.ok) continue;
-                            const text = await res.text();
-                            if (!text.startsWith('#EXTM3U')) continue;
-
-                            const entry = service?.constructor?.captureFromUrl?.(url, text);
-                            if (!entry?.qualities?.length) continue;
-
-                            respond({ ok: true, masterUrl: url, qualities: entry.qualities });
+                            const result = await probe(suffix);
+                            respond({ ok: true, ...result });
                             return;
                         } catch {}
                     }
@@ -479,6 +483,23 @@
                     const tabId = sender?.tab?.id;
                     const qs = new URLSearchParams({ autoDownload: '1' });
                     if (tabId) qs.set('tabId', String(tabId));
+                    respond({ ok: await openPopupWindow(
+                        browserAPI.runtime.getURL(`popup.html?${qs}`)
+                    )});
+                } catch (e) {
+                    respond({ ok: false, error: String(e) });
+                }
+            })();
+            return true;
+        }],
+
+        ['openPlaylistDownloadWindow', (msg, sender, respond) => {
+            (async () => {
+                try {
+                    const tabId = sender?.tab?.id;
+                    const qs = new URLSearchParams({ playlistAutoDownload: '1' });
+                    if (tabId) qs.set('tabId', String(tabId));
+                    if (msg.zip) qs.set('playlistZip', '1');
                     respond({ ok: await openPopupWindow(
                         browserAPI.runtime.getURL(`popup.html?${qs}`)
                     )});

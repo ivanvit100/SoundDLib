@@ -13,8 +13,13 @@
 
     function $el(id) { return document.getElementById(id); }
 
+    function isStandaloneWindow() {
+        const p = new URLSearchParams(location.search);
+        return p.has('tabId') || p.has('autoDownload') || p.has('playlistAutoDownload');
+    }
+
     class PlaylistController {
-        constructor(service, playlistId) {
+        constructor(service, playlistId, options = {}) {
             this.service = service;
             this.playlistId = playlistId;
             this.manager = new global.PlaylistManager();
@@ -22,6 +27,8 @@
             this._tracks = [];
             this._title = 'playlist';
             this._isDownloading = false;
+            this._autoStart = options.autoStart || false;
+            this._autoStartZip = options.zip || false;
             this._init();
         }
 
@@ -53,6 +60,9 @@
                 ]);
                 this._renderTrackList();
                 this._showPhase('ready');
+
+                if (this._autoStart)
+                    await this._startDownload(this._autoStartZip);
             } catch (e) {
                 console.error('[PlaylistController] Discovery failed:', e);
                 const s = $el('discoveryStatus');
@@ -65,23 +75,40 @@
             if (!list) return;
             list.innerHTML = '';
 
-            this._tracks.forEach((track, i) => {
+            this._tracks.forEach((track) => {
                 const item = document.createElement('div');
                 item.className = 'track-item';
-                const num = document.createElement('span');
-                num.className = 'track-num';
-                num.textContent = String(i + 1).padStart(2, '0');
+
+                const cover = document.createElement('img');
+                cover.className = 'track-cover';
+                cover.alt = '';
+                cover.loading = 'lazy';
+                if (track.cover) {
+                    cover.src = track.cover;
+                } else {
+                    cover.src = 'data:image/svg+xml,' + encodeURIComponent(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+                        '<rect width="32" height="32" rx="3" fill="#3d3d3f"/>' +
+                        '<circle cx="16" cy="16" r="6" fill="none" stroke="#666" stroke-width="1.5"/>' +
+                        '<circle cx="16" cy="16" r="2" fill="#666"/>' +
+                        '</svg>'
+                    );
+                }
+
                 const info = document.createElement('span');
                 info.className = 'track-info';
+
                 const title = document.createElement('span');
                 title.className = 'track-title';
                 title.textContent = track.title || '—';
+
                 const artist = document.createElement('span');
                 artist.className = 'track-artist';
                 artist.textContent = track.artist || '';
+
                 info.appendChild(title);
                 if (track.artist) info.appendChild(artist);
-                item.appendChild(num);
+                item.appendChild(cover);
                 item.appendChild(info);
                 list.appendChild(item);
             });
@@ -92,6 +119,15 @@
 
         async _startDownload(zip = false) {
             if (this._isDownloading || !this._tracks.length) return;
+
+            if (!isStandaloneWindow()) {
+                const api = typeof global.getExtensionApi === 'function'
+                    ? global.getExtensionApi()
+                    : (global.chrome || global.browser);
+                await api.runtime.sendMessage({ action: 'openPlaylistDownloadWindow', zip });
+                return;
+            }
+
             this._isDownloading = true;
             const format = $el('formatSelector')?.value || 'mp3';
 

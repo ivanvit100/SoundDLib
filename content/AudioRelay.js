@@ -39,16 +39,16 @@
         if (message.action === 'fetchKeyFromMainWorld') {
             (async () => {
                 try {
-                    const init = { credentials: 'include', mode: 'same-origin' };
                     const hdrs = message.extraHeaders || [];
-                    if (hdrs.length) {
-                        init.headers = {};
-                        for (const h of hdrs) init.headers[h.name] = h.value;
-                    }
-                    const res = await fetch(message.url, init);
+                    const xekValue = message.xekValue ||
+                        Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                            .map(b => b.toString(16).padStart(2, '0')).join('');
+                    const headers = { 'x-encrypted-key': xekValue };
+                    for (const h of hdrs) headers[h.name] = h.value;
+                    const res = await fetch(message.url, { credentials: 'include', headers });
                     if (!res.ok) { sendResponse({ ok: false, status: res.status }); return; }
                     const buf = await res.arrayBuffer();
-                    sendResponse({ ok: true, data: Array.from(new Uint8Array(buf)) });
+                    sendResponse({ ok: true, data: Array.from(new Uint8Array(buf)), source: 'fetch', xekValue });
                 } catch (e) {
                     sendResponse({ ok: false, error: String(e) });
                 }
