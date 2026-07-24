@@ -82,8 +82,7 @@
             for (const id of this._order) {
                 const e = this._store.get(id);
                 const u = e.masterUrl || e.url || '';
-                // Match /track/123/ (exact) or /track/123_2/ (with CDN suffix)
-                if (u.includes(prefix + '/') || u.includes(prefix + '_')) return e;
+                if (u.includes(`${prefix  }/`) || u.includes(`${prefix  }_`)) return e;
             }
             return null;
         }

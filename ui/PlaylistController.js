@@ -83,16 +83,16 @@
                 cover.className = 'track-cover';
                 cover.alt = '';
                 cover.loading = 'lazy';
-                if (track.cover) {
+                if (track.cover)
                     cover.src = track.cover;
-                } else {
-                    cover.src = 'data:image/svg+xml,' + encodeURIComponent(
+                 else {
+                    cover.src = `data:image/svg+xml,${  encodeURIComponent(
                         '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
                         '<rect width="32" height="32" rx="3" fill="#3d3d3f"/>' +
                         '<circle cx="16" cy="16" r="6" fill="none" stroke="#666" stroke-width="1.5"/>' +
                         '<circle cx="16" cy="16" r="2" fill="#666"/>' +
                         '</svg>'
-                    );
+                    )}`;
                 }
 
                 const info = document.createElement('span');
@@ -136,7 +136,9 @@
 
             try {
                 if (zip)
-                    await this.manager.downloadAllAsZip(this._tracks, format, this.converter, this._title, this.service);
+                    {await this.manager.downloadAllAsZip(
+                        this._tracks, format, this.converter, this._title, this.service
+                    );}
                 else
                     await this.manager.downloadAll(this._tracks, format, this.converter, this.service);
             } catch {}
@@ -188,6 +190,7 @@
             const doneMsg    = $el('doneSection');
 
             const show = (el, v) => { if (el) el.style.display = v ? 'block' : 'none'; };
+
             const flex = (el, v) => { if (el) el.style.display = v ? 'flex' : 'none'; };
 
             show(discovery,  phase === 'discovering');

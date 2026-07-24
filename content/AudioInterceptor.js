@@ -1,15 +1,8 @@
 /**
- * SoundDLib content script — MAIN world
- *
+ * SoundDLib content script
  * Minimal fallback interceptor for services that deliver audio via data: URLs
  * or other mechanisms not visible to the background's webRequest listener.
- *
- * HLS master playlist detection (the primary Zvuk.com mechanism) is handled
- * exclusively in the background via webRequest.onCompleted in RequestInterceptor.
- *
- * Chrome MV3 + Firefox MV3 (128+): loaded via manifest "world": "MAIN".
- * Communicates with AudioRelay.js (isolated world) via window.postMessage.
- *
+ * @module content/AudioInterceptor
  * @author ivanvit
  * @version 0.0.1
  */
@@ -43,7 +36,7 @@
                 if (typeof value === 'string' && value.startsWith('data:audio')) {
                     const comma = value.indexOf(',');
                     if (comma !== -1) {
-                        const mimeType = value.slice(5, comma).split(';')[0];
+                        const [mimeType] = value.slice(5, comma).split(';');
                         const binary = atob(value.slice(comma + 1));
                         const bytes = new Uint8Array(binary.length);
                         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -59,18 +52,15 @@
         });
     }
 
-    // Also capture via play() — handles detached elements (new Audio() not in DOM)
     const _origPlay = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function() {
         window.__sounddlib_media_el = this;
         return _origPlay.call(this);
     };
 
-    // Seed from DOM in case element already exists (page reuse)
     if (!window.__sounddlib_media_el)
         window.__sounddlib_media_el = document.querySelector('video, audio');
 
-    // State DOM bridge: write playback state every 500ms for ISOLATED world to read
     setInterval(() => {
         const media = window.__sounddlib_media_el;
         if (!media || !document.body) return;
@@ -84,7 +74,6 @@
         el.dataset.t = media.currentTime;
         el.dataset.d = isFinite(media.duration) ? media.duration : 0;
         el.dataset.p = media.paused ? '1' : '0';
-        // Handle seek requests written by ISOLATED world
         const seekTo = parseFloat(el.dataset.seekTo);
         if (!isNaN(seekTo)) {
             media.currentTime = seekTo;
@@ -128,11 +117,11 @@
         const result = await _importKey(format, keyData, algorithm, extractable, usages);
         try {
             if (format === 'raw' && (algorithm?.name ?? algorithm) === 'AES-CBC') {
-                const src = keyData instanceof ArrayBuffer
-                    ? keyData
-                    : ArrayBuffer.isView(keyData)
-                        ? keyData.buffer.slice(keyData.byteOffset, keyData.byteOffset + keyData.byteLength)
-                        : null;
+                let src = null;
+                if (keyData instanceof ArrayBuffer)
+                    src = keyData;
+                else if (ArrayBuffer.isView(keyData))
+                    src = keyData.buffer.slice(keyData.byteOffset, keyData.byteOffset + keyData.byteLength);
                 if (src && src.byteLength === 16 && window.__sounddlib_pending_tid)
                     window.__sounddlib_key_store[window.__sounddlib_pending_tid] = Array.from(new Uint8Array(src));
             }
@@ -187,8 +176,10 @@
     window.Blob = function(parts, options) {
         if (Array.isArray(parts) && typeof parts[0] === 'string' && parts[0].length > 200) {
             const t = options?.type ?? '';
-            if (!t || t.includes('javascript') || t.includes('ecmascript'))
-                parts = [_workerSpy, ...parts];
+            if (!t || t.includes('javascript') || t.includes('ecmascript')) {
+                const newParts = [_workerSpy, ...parts];
+                return new _Blob(newParts, options);
+            }
         }
         return new _Blob(parts, options);
     };

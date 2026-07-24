@@ -79,10 +79,10 @@
                     const filename = this._buildFilename(idx, track, formatMeta.ext);
                     const blob = new Blob([outputBuffer], { type: formatMeta.mimeType });
                     this._saveFile(blob, filename);
-                    done++;
+                    done += 1;
                 } catch (error) {
                     console.error(`[PlaylistManager] Track ${i + 1} failed:`, error);
-                    failed++;
+                    failed += 1;
                 }
 
                 await this._delay(50);
@@ -172,14 +172,13 @@
                     zip.add(deflate);
                     deflate.push(new Uint8Array(outputBuffer), true);
 
-                    if (writable && pendingChunks.length) {
+                    if (writable && pendingChunks.length)
                         for (const c of pendingChunks.splice(0)) await writable.write(c);
-                    }
 
-                    done++;
+                    done += 1;
                 } catch (error) {
                     console.error(`[PlaylistManager] Track ${i + 1} failed:`, error);
-                    failed++;
+                    failed += 1;
                 }
 
                 await this._delay(50);
@@ -221,7 +220,7 @@
                 throw new Error(probe?.error || `CDN probe failed for track ${track.id}`);
 
             const qualities = (probe.qualities || []).sort((a, b) => b.bandwidth - a.bandwidth);
-            const best = qualities[0];
+            const [best] = qualities;
             if (!best) throw new Error(`No stream quality for track ${track.id}`);
 
             const result = await service.getAudioData(
@@ -247,6 +246,7 @@
                 isPaused:   () => paused,
                 shouldStop: () => stopped,
                 waitIfPaused: async () => {
+                    // eslint-disable-next-line no-unmodified-loop-condition
                     while (paused && !stopped)
                         await new Promise(r => setTimeout(r, 100));
                 }

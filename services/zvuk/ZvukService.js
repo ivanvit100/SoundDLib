@@ -38,12 +38,12 @@ query getPlaylist($id: ID!) {
         }
 
         static isPlaylistPage(url) {
-            return /zvuk\.com\/(playlist|collection)\/\d+/.test(url);
+            return /zvuk\.com\/(?:playlist|collection)\/\d+/.test(url);
         }
 
         extractPlaylistId(url) {
-            const m = url.match(/\/(playlist|collection)\/(\d+)/);
-            return m ? m[2] : null;
+            const m = url.match(/\/(?:playlist|collection)\/(\d+)/);
+            return m ? m[1] : null;
         }
 
         extractTrackId(url) {
@@ -86,7 +86,7 @@ query getPlaylist($id: ID!) {
                 if (next && !next.startsWith('#')) {
                     const url = /^https?:\/\//.test(next) ? next : base + next;
                     qualities.push({ bandwidth: bw, codecs, url, label: ZvukService.qualityLabel(bw, codecs) });
-                    i++;
+                    i += 1;
                 }
             }
             return qualities;
@@ -103,11 +103,11 @@ query getPlaylist($id: ID!) {
         getAudioData(trackEntry, { qualityUrl }, api, onProgress) {
             if (trackEntry.type !== 'hls' || !qualityUrl)
                 throw new Error('ZvukService.getAudioData: HLS trackEntry and qualityUrl required');
-            const downloader = new global.HlsDownloader();
+            const downloader = new global.ZvukHlsDownloader();
             return downloader.download(qualityUrl, api, onProgress);
         }
 
-        async graphqlFetch(query, variables, operationName) {
+        graphqlFetch(query, variables, operationName) {
             return this.apiFetch(this.config.graphqlUrl, {
                 method: 'POST',
                 body: JSON.stringify({ query, variables, operationName }),
@@ -194,9 +194,9 @@ query getPlaylist($id: ID!) {
         }
 
         _coverUrlRest(raw) {
-            for (const v of [raw.image, raw.cover, raw.release?.image]) {
+            for (const v of [raw.image, raw.cover, raw.release?.image])
                 if (typeof v === 'string' && v.startsWith('http')) return v;
-            }
+
             if (raw.release?.image && raw.release?.id)
                 return `https://cdn-image.zvuk.com/pic?hash=${raw.release.image}&id=${raw.release.id}&size=large&type=release`;
             if (raw.image && raw.id)

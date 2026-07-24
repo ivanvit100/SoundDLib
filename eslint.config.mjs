@@ -4,7 +4,7 @@ import regexp from 'eslint-plugin-regexp';
 import stylisticJS from '@stylistic/eslint-plugin';
 
 export default [
-    { ignores: ['**/*cache', '**/*.min.{js,mjs}', '**/*.test.js', '**/package-lock.json', 'lib/**', '/.github/**/**.js'] },
+    { ignores: ['**/*cache', '**/*.min.{js,mjs}', '**/*.test.js', '**/package-lock.json', 'lib/**', '/.github/**/**.js', '.claude/**', 'vitest.config.js', 'eslint.config.mjs'] },
     {
         files: ['**/*.{js,mjs}'],
         languageOptions: {
@@ -54,7 +54,7 @@ export default [
             'no-unmodified-loop-condition': 'error',
             'no-useless-return': 'error',
             'no-with': 'error',
-            'no-unused-vars': ['error', { 'caughtErrors': 'none' }],
+            'no-unused-vars': ['error', { 'caughtErrors': 'none', 'argsIgnorePattern': '^_' }],
             'regexp/prefer-character-class': 'error',
             'regexp/prefer-quantifier': 'error',
             'regexp/prefer-regexp-exec': 'error',
@@ -70,7 +70,7 @@ export default [
             'camelcase': ['error', {
                 properties: 'always',
                 ignoreDestructuring: false,
-                allow: ['rus_name']
+                allow: ['rus_name', '^__sounddlib_']
             }],
             'dot-notation': 'error',
             'guard-for-in': 'error',

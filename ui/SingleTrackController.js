@@ -117,6 +117,28 @@
             } catch {}
         }
 
+        async _loadFromStoreOrCdn() {
+            const meta = this._trackMeta || {};
+            const stored = await browserAPI.runtime.sendMessage({
+                action: 'getTrackByZvukId', zvukId: this._zvukTrackId
+            });
+            if (stored?.ok) return stored;
+
+            const streamCheck = await browserAPI.runtime.sendMessage({
+                action: 'getStreamUrlByZvukId', zvukId: this._zvukTrackId
+            });
+            if (streamCheck?.ok) {
+                const res = await browserAPI.runtime.sendMessage({
+                    action: 'probeCdnForTrack', zvukId: this._zvukTrackId, meta
+                });
+                if (res?.ok) return res;
+            }
+
+            return browserAPI.runtime.sendMessage({
+                action: 'probeCdnForTrack', zvukId: this._zvukTrackId, meta
+            });
+        }
+
         async _loadTrackFromZvukId() {
             const status = $el('status');
             const btn    = $el('downloadBtn');
@@ -127,35 +149,9 @@
                 this._renderTrackMeta(this._trackMeta);
 
             try {
-                // 1. Already in AudioStore (previously captured)
-                const stored = await browserAPI.runtime.sendMessage({
-                    action: 'getTrackByZvukId', zvukId: this._zvukTrackId
-                });
-                if (stored?.ok) { this._applyTrackEntry(stored); return; }
-
-                // 2. Fetch spy already captured the CDN URL from a zvuk.com API response
-                const streamCheck = await browserAPI.runtime.sendMessage({
-                    action: 'getStreamUrlByZvukId', zvukId: this._zvukTrackId
-                });
-                if (streamCheck?.ok) {
-                    const res = await browserAPI.runtime.sendMessage({
-                        action: 'probeCdnForTrack',
-                        zvukId: this._zvukTrackId,
-                        meta: this._trackMeta || {}
-                    });
-                    if (res?.ok) { this._applyTrackEntry(res); return; }
-                }
-
-                // 3. Probe CDN directly — no auth needed, try common suffixes (_2, _1, _3 …)
-                const probe = await browserAPI.runtime.sendMessage({
-                    action: 'probeCdnForTrack',
-                    zvukId: this._zvukTrackId,
-                    meta: this._trackMeta || {}
-                });
-                if (probe?.ok) { this._applyTrackEntry(probe); return; }
-
-                if (status) status.textContent = `Ошибка: ${probe?.error || 'поток недоступен'}`;
-
+                const entry = await this._loadFromStoreOrCdn();
+                if (entry?.ok) { this._applyTrackEntry(entry); return; }
+                if (status) status.textContent = `Ошибка: ${entry?.error || 'поток недоступен'}`;
             } catch (e) {
                 if (status) status.textContent = `Ошибка: ${e.message}`;
                 console.error('[SingleTrackController] _loadTrackFromZvukId:', e);
@@ -339,7 +335,8 @@
         }
 
         async _awaitTrackChange(prevTrackId) {
-            const token = (this._trackChangeToken = {});
+            this._trackChangeToken = {};
+            const token = this._trackChangeToken;
 
             for (let i = 0; i < 12; i++) {
                 await new Promise(r => setTimeout(r, 500));
@@ -394,6 +391,15 @@
             }
         }
 
+        _clearPlayerUI(fill, bar, cur, dur, play, paus) {
+            if (fill) fill.style.width = '0%';
+            if (cur)  cur.textContent = '0:00';
+            if (dur)  dur.textContent = '0:00';
+            if (bar && !this._seeking) { bar.max = 100; bar.value = 0; }
+            if (play) play.style.display = '';
+            if (paus) paus.style.display = 'none';
+        }
+
         _updatePlayerUI(state) {
             const fill = $el('playbackFill');
             const bar  = $el('playbackBar');
@@ -402,15 +408,7 @@
             const play = $el('playIcon');
             const paus = $el('pauseIcon');
 
-            if (!state) {
-                if (fill) fill.style.width = '0%';
-                if (cur)  cur.textContent = '0:00';
-                if (dur)  dur.textContent = '0:00';
-                if (bar && !this._seeking) { bar.max = 100; bar.value = 0; }
-                if (play) play.style.display = '';
-                if (paus) paus.style.display = 'none';
-                return;
-            }
+            if (!state) { this._clearPlayerUI(fill, bar, cur, dur, play, paus); return; }
 
             const { currentTime, duration, paused } = state;
             const pct = duration > 0 ? (currentTime / duration * 100) : 0;

@@ -62,23 +62,44 @@
             return this._loadPromise;
         }
 
-        async convert(inputBuffer, inputMimeType, outputFormat, onProgress) {
+        _validateInput(inputBuffer) {
             if (!inputBuffer || inputBuffer.byteLength < MIN_VALID_BYTES) {
                 throw new Error(
                     `Аудиоданные слишком маленькие (${inputBuffer?.byteLength ?? 0} байт). ` +
                     `Возможно, захват не удался — попробуйте снова.`
                 );
             }
-
             const bytes = new Uint8Array(inputBuffer);
-
             if (bytes[0] === 0x3C) {
                 throw new Error(
                     'CDN вернул HTML вместо аудиоданных. ' +
                     'Токен мог устареть — перезапустите воспроизведение и попробуйте снова.'
                 );
             }
+            return bytes;
+        }
 
+        async _runFfmpeg(inputExt, outputExt, codecArgs, bytes) {
+            this._ffmpeg.FS('writeFile', `in.${inputExt}`, bytes);
+            let output;
+            try {
+                try {
+                    await this._ffmpeg.run('-i', `in.${inputExt}`, ...codecArgs, `out.${outputExt}`);
+                } catch (e) {
+                    if (!(e?.name === 'ExitStatus' && e?.status === 0)) throw e;
+                    this._needsRecreation = true;
+                }
+                output = this._ffmpeg.FS('readFile', `out.${outputExt}`);
+            } finally {
+                try { this._ffmpeg.FS('unlink', `in.${inputExt}`); } catch {}
+
+                try { this._ffmpeg.FS('unlink', `out.${outputExt}`); } catch {}
+            }
+            return output;
+        }
+
+        async convert(inputBuffer, inputMimeType, outputFormat, onProgress) {
+            const bytes = this._validateInput(inputBuffer);
             const inputExt = MIME_TO_EXT[inputMimeType?.toLowerCase()] || 'mp3';
             const outputExt = outputFormat === 'aac' ? 'm4a' : outputFormat;
 
@@ -94,33 +115,13 @@
             console.log(`[AudioConverter] convert: ${bytes.length} bytes, ${inputMimeType} → ${outputFormat}`);
             console.log(`[AudioConverter] First 4 bytes: ${bytes[0].toString(16)} ${bytes[1].toString(16)} ${bytes[2].toString(16)} ${bytes[3].toString(16)}`);
 
-            if (onProgress)
-                this._ffmpeg.setProgress(({ ratio }) => onProgress(Math.round(ratio * 100)));
-
-            this._ffmpeg.FS('writeFile', `in.${inputExt}`, bytes);
-
-            let output;
+            if (onProgress) this._ffmpeg.setProgress(({ ratio }) => onProgress(Math.round(ratio * 100)));
             try {
-                try {
-                    await this._ffmpeg.run(
-                        '-i', `in.${inputExt}`,
-                        ...codecArgs,
-                        `out.${outputExt}`
-                    );
-                } catch (e) {
-                    // Emscripten throws ExitStatus(0) on normal ffmpeg completion.
-                    // The internal 'running' flag (closure variable in minified code)
-                    // can't be reset externally — recreate the instance for next call.
-                    if (!(e?.name === 'ExitStatus' && e?.status === 0)) throw e;
-                    this._needsRecreation = true;
-                }
-                output = this._ffmpeg.FS('readFile', `out.${outputExt}`);
+                const output = await this._runFfmpeg(inputExt, outputExt, codecArgs, bytes);
+                return output.buffer;
             } finally {
-                try { this._ffmpeg.FS('unlink', `in.${inputExt}`); } catch {}
-                try { this._ffmpeg.FS('unlink', `out.${outputExt}`); } catch {}
                 if (onProgress) this._ffmpeg.setProgress(() => {});
             }
-            return output.buffer;
         }
     }
 

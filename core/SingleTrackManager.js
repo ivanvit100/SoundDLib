@@ -14,6 +14,65 @@
             this.eventBus = new global.EventBus();
         }
 
+        async _enrichMeta(meta, resp) {
+            if (meta.cover) return;
+            const hlsUrl = resp.masterUrl || resp.url;
+            const zvukId = hlsUrl?.match(/\/track\/(\d+)\//)?.[1];
+            if (!zvukId) return;
+            const svc = global.serviceRegistry?.getService(resp.serviceName || 'zvuk');
+            if (!svc) return;
+            try { Object.assign(meta, await svc.fetchTrackMeta(zvukId)); } catch {}
+        }
+
+        async _resolveAudio(resp, qualityUrl, api) {
+            if (resp.type && resp.type !== 'audio') {
+                const serviceName = resp.serviceName || 'zvuk';
+                const service = global.serviceRegistry?.getService(serviceName);
+                if (!service)
+                    throw new Error(`Сервис "${serviceName}" не найден в реестре`);
+                const result = await service.getAudioData(resp, { qualityUrl }, api, (phase, done, total) => {
+                    if (phase === 'key')
+                        this.eventBus.emit('download:progress', { message: 'Получение ключа...', percent: 8 });
+                    else if (phase === 'init')
+                        this.eventBus.emit('download:progress', { message: 'Инициализация потока...', percent: 10 });
+                    else if (phase === 'segment') {
+                        const pct = 10 + Math.round(((done + 1) / total) * 65);
+                        this.eventBus.emit('download:progress', { message: `Сегменты: ${done + 1}/${total}`, percent: pct });
+                    }
+                });
+                return { inputBuffer: result.data, inputMimeType: result.mimeType, conversionStartPct: 75 };
+            }
+
+            if (resp.data) {
+                return {
+                    inputBuffer: new Uint8Array(resp.data).buffer,
+                    inputMimeType: resp.mimeType,
+                    conversionStartPct: 15
+                };
+            }
+
+            if (resp.url) {
+                this.eventBus.emit('download:progress', { message: 'Загрузка аудиофайла...', percent: 10 });
+                const fetchResp = await api.runtime.sendMessage({ action: 'fetchAudioTrack', url: resp.url });
+                if (!fetchResp?.ok)
+                    throw new Error(fetchResp?.error || 'Не удалось загрузить аудиофайл');
+                const fetchedMime = fetchResp.mimeType || '';
+                console.log(`[SingleTrackManager] fetchAudioTrack: ${fetchResp.data?.length} bytes, mime=${fetchedMime}`);
+                if (fetchedMime && !fetchedMime.startsWith('audio/')) {
+                    throw new Error(
+                        `CDN вернул ${fetchedMime} вместо аудио. ` +
+                        `Токен мог устареть — перезапустите воспроизведение.`
+                    );
+                }
+                return {
+                    inputBuffer: new Uint8Array(fetchResp.data).buffer,
+                    inputMimeType: fetchedMime || resp.mimeType,
+                    conversionStartPct: 15
+                };
+            }
+            throw new Error('Нет данных для скачивания');
+        }
+
         async download(trackId, format, qualityUrl, converter) {
             this.eventBus.emit('download:started', { trackId });
 
@@ -33,75 +92,10 @@
                     throw new Error(resp?.error || 'Трек не найден в хранилище');
 
                 const meta = { ...(resp.meta || {}) };
-                let inputBuffer;
-                let inputMimeType = resp.mimeType;
+                await this._enrichMeta(meta, resp);
 
-                // Enrich meta (cover, accurate title/artist) if not already present
-                if (!meta.cover) {
-                    const hlsUrl = resp.masterUrl || resp.url;
-                    const zvukId = hlsUrl?.match(/\/track\/(\d+)\//)?.[1];
-                    if (zvukId) {
-                        const svcName = resp.serviceName || 'zvuk';
-                        const svc = global.serviceRegistry?.getService(svcName);
-                        if (svc) {
-                            try {
-                                const fresh = await svc.fetchTrackMeta(zvukId);
-                                Object.assign(meta, fresh);
-                            } catch {}
-                        }
-                    }
-                }
-
-                let conversionStartPct = 15;
-
-                if (resp.type && resp.type !== 'audio') {
-                    const serviceName = resp.serviceName || 'zvuk';
-                    const service = global.serviceRegistry?.getService(serviceName);
-                    if (!service)
-                        throw new Error(`Сервис "${serviceName}" не найден в реестре`);
-
-                    const result = await service.getAudioData(
-                        resp,
-                        { qualityUrl },
-                        api,
-                        (phase, done, total) => {
-                            if (phase === 'key') {
-                                this.eventBus.emit('download:progress',
-                                    { message: 'Получение ключа...', percent: 8 });
-                            } else if (phase === 'init') {
-                                this.eventBus.emit('download:progress',
-                                { message: 'Инициализация потока...', percent: 10 });
-                            } else if (phase === 'segment') {
-                                const pct = 10 + Math.round(((done + 1) / total) * 65);
-                                this.eventBus.emit('download:progress', {
-                                    message: `Сегменты: ${done + 1}/${total}`, percent: pct
-                                });
-                            }
-                        }
-                    );
-                    inputBuffer = result.data;
-                    inputMimeType = result.mimeType;
-                    conversionStartPct = 75;
-                } else if (resp.data)
-                    inputBuffer = new Uint8Array(resp.data).buffer;
-                else if (resp.url) {
-                    this.eventBus.emit('download:progress', { message: 'Загрузка аудиофайла...', percent: 10 });
-                    const fetchResp = await api.runtime.sendMessage({ action: 'fetchAudioTrack', url: resp.url });
-                    if (!fetchResp?.ok)
-                        throw new Error(fetchResp?.error || 'Не удалось загрузить аудиофайл');
-
-                    const fetchedMime = fetchResp.mimeType || '';
-                    console.log(`[SingleTrackManager] fetchAudioTrack: ${fetchResp.data?.length} bytes, mime=${fetchedMime}`);
-                    if (fetchedMime && !fetchedMime.startsWith('audio/')) {
-                        throw new Error(
-                            `CDN вернул ${fetchedMime} вместо аудио. ` +
-                            `Токен мог устареть — перезапустите воспроизведение.`
-                        );
-                    }
-
-                    inputBuffer = new Uint8Array(fetchResp.data).buffer;
-                    inputMimeType = fetchedMime || resp.mimeType;
-                } else throw new Error('Нет данных для скачивания');
+                const { inputBuffer, inputMimeType, conversionStartPct } =
+                    await this._resolveAudio(resp, qualityUrl, api);
 
                 this.eventBus.emit('download:progress', { message: 'Конвертация...', percent: conversionStartPct });
 

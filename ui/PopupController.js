@@ -42,9 +42,9 @@
                 } : null;
 
                 let tab;
-                if (forcedTabId) {
+                if (forcedTabId)
                     try { tab = await browserAPI.tabs.get(forcedTabId); } catch {}
-                }
+
                 if (!tab) {
                     const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
                     tab = tabs?.[0];
@@ -74,7 +74,9 @@
                 } else {
                     await global.TemplateLoader.show('single-track', () => {
                         global.popupSingleTrackController =
-                            new global.SingleTrackController(service, tab.id, { standalone, autoDownload, zvukTrackId, trackMeta });
+                            new global.SingleTrackController(
+                                service, tab.id, { standalone, autoDownload, zvukTrackId, trackMeta }
+                            );
                     });
                 }
             } catch (e) {

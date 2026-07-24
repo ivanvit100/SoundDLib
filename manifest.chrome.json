@@ -43,22 +43,10 @@
         "128": "icons/icon128.png"
     },
 
-    "content_scripts": [
-        {
-            "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"],
-            "js": ["content/AudioInterceptor.js"],
-            "world": "MAIN",
-            "run_at": "document_start"
-        },
-        {
-            "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"],
-            "js": ["content/AudioRelay.js"],
-            "run_at": "document_start"
-        }
-    ],
+    "content_scripts": [],
 
     "web_accessible_resources": [{
-        "resources": ["lib/ffmpeg-core.js", "lib/ffmpeg-core.wasm", "lib/ffmpeg-core.worker.js", "content/AudioInterceptor.js"],
+        "resources": ["lib/ffmpeg-core.js", "lib/ffmpeg-core.wasm", "lib/ffmpeg-core.worker.js", "services/zvuk/ZvukInterceptor.js"],
         "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"]
     }]
 }

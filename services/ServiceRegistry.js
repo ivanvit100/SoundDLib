@@ -8,18 +8,40 @@
 'use strict';
 
 (function(global) {
-    console.log('[ServiceRegistry] Loading...');
-
-    const SERVICE_SCRIPTS = [
-        '/services/zvuk/config.js',
-        '/services/BaseAudioService.js',
-        '/services/zvuk/ZvukService.js'
+    global.SERVICE_DEFINITIONS = [
+        {
+            name: 'zvuk',
+            matches: ['https://zvuk.com/*', 'https://*.zvuk.com/*'],
+            scripts: {
+                background: [
+                    '/services/zvuk/config.js',
+                    '/services/BaseAudioService.js',
+                    '/services/zvuk/ZvukService.js',
+                    '/services/zvuk/ZvukMessageHandler.js',
+                    '/services/zvuk/ZvukRequestInterceptor.js'
+                ],
+                popup: [
+                    '/services/zvuk/config.js',
+                    '/services/BaseAudioService.js',
+                    '/core/base/BaseHlsDownloader.js',
+                    '/services/zvuk/ZvukHlsDownloader.js',
+                    '/services/zvuk/ZvukService.js'
+                ],
+                contentMain: [
+                    'core/base/BaseInterceptor.js',
+                    'services/zvuk/ZvukInterceptor.js'
+                ],
+                contentIsolated: [
+                    'core/base/BaseRelay.js',
+                    'services/zvuk/ZvukRelay.js'
+                ]
+            }
+        }
     ];
 
     class ServiceRegistry {
         constructor() {
             this.services = new Map();
-            console.log('[ServiceRegistry] Instance created');
         }
 
         register(ServiceClass) {
@@ -27,12 +49,12 @@
                 const instance = new ServiceClass();
                 this.services.set(instance.name, {
                     class: ServiceClass,
-                    instance: instance,
+                    instance,
                     matcher: ServiceClass.matches
                 });
                 console.log(`[ServiceRegistry] Registered: ${instance.name}`);
             } catch (e) {
-                console.error(`[ServiceRegistry] Failed to register service:`, e);
+                console.error('[ServiceRegistry] Failed to register service:', e);
             }
         }
 
@@ -69,13 +91,5 @@
 
     global.ServiceRegistry = ServiceRegistry;
     global.serviceRegistry = new ServiceRegistry();
-
-    if (typeof importScripts === 'function')
-        importScripts(...SERVICE_SCRIPTS);
-    else if (typeof document !== 'undefined' && document.currentScript !== null) {
-        // no-restricted-globals
-        SERVICE_SCRIPTS.forEach(src => document.write(`<script src="${src}"><\/script>`));
-    }
-
     console.log('[ServiceRegistry] Loaded');
 })(typeof window !== 'undefined' ? window : self);

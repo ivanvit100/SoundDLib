@@ -3,7 +3,7 @@
  * Safe localStorage wrapper with availability check
  * @module core/Storage
  * @author ivanvit
- * @version 1.0.7
+ * @version 0.0.1
  */
 
 'use strict';

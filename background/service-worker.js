@@ -8,12 +8,22 @@ try {
         '/core/RateLimiter.js',
         '/core/EventBus.js',
         '/services/ServiceRegistry.js',
+        '/background/ServicesLoader.js',
         '/background/AudioStore.js',
+        '/background/ContentScriptManager.js'
+    );
+} catch (e) {
+    console.error('[ServiceWorker] Failed to load core scripts:', e.message, e.stack);
+    throw e;
+}
+
+try {
+    importScripts(
         '/background/RequestInterceptor.js',
         '/background/MessageRouter.js'
     );
 } catch (e) {
-    console.error('[ServiceWorker] Failed to load scripts:', e.message, e.stack);
+    console.error('[ServiceWorker] Failed to load background scripts:', e.message, e.stack);
     throw e;
 }
 

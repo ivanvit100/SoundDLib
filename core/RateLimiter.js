@@ -4,7 +4,7 @@
  * @module core/RateLimiter
  * @license MIT
  * @author ivanvit
- * @version 1.0.6
+ * @version 0.0.1
  */
 
 'use strict';

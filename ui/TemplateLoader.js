@@ -2,9 +2,8 @@
  * DownloadLib ui module
  * Loads HTML template fragments into the anchor element
  * @module ui/TemplateLoader
- * @license MIT
  * @author ivanvit
- * @version 1.0.7
+ * @version 0.0.1
  */
 
 'use strict';
