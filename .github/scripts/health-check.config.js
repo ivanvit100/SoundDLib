@@ -18,7 +18,21 @@
 //   { path: 'name', notEmpty: true }           — непустая строка/массив
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Известный публичный трек и плейлист Zvuk для проверок (не требуют авторизации)
+const ZVUK_TRACK_ID  = '9897816';   // популярный трек с публичными метаданными
+const ZVUK_PL_ID     = '119485';    // публичный плейлист
+
 const headers = {
+  zvuk: {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0',
+    'Accept': 'application/json',
+    'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8',
+    'Referer': 'https://zvuk.com/',
+    'Origin': 'https://zvuk.com',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin'
+  },
   ranobelib: {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0',
     'Accept': '*/*',
@@ -50,6 +64,83 @@ const headers = {
 };
 
 module.exports = [
+  // ─── Zvuk ────────────────────────────────────────────────────────────────
+  {
+    id: 'Zvuk REST API: Track metadata',
+    url: `https://zvuk.com/api/v1/track/${ZVUK_TRACK_ID}`,
+    method: 'GET',
+    headers: headers.zvuk,
+    expectStatus: [200, 401],
+    expectFields: [
+      { path: 'result.id', type: 'number' },
+      { path: 'result.title', type: 'string', notEmpty: true },
+      { path: 'result.duration', type: 'number', min: 1 },
+      { path: 'result.artists', type: 'array', min: 1 },
+      { path: 'result.release.id', type: 'number' },
+      { path: 'result.release.title', type: 'string', notEmpty: true }
+    ]
+  },
+  {
+    id: 'Zvuk GraphQL: Playlist metadata',
+    url: 'https://zvuk.com/api/v1/graphql',
+    method: 'POST',
+    headers: { ...headers.zvuk, 'Content-Type': 'application/json' },
+    body: {
+      operationName: 'getPlaylist',
+      variables: { id: ZVUK_PL_ID },
+      query: 'query getPlaylist($id: ID!) { playlist(id: $id) { id title tracksCount image { src } } }'
+    },
+    expectStatus: [200, 401],
+    expectFields: [
+      { path: 'data.playlist.id', type: 'string', notEmpty: true },
+      { path: 'data.playlist.title', type: 'string', notEmpty: true },
+      { path: 'data.playlist.tracksCount', type: 'number', min: 1 }
+    ]
+  },
+  {
+    id: 'Zvuk GraphQL: Playlist tracks (first page)',
+    url: 'https://zvuk.com/api/v1/graphql',
+    method: 'POST',
+    headers: { ...headers.zvuk, 'Content-Type': 'application/json' },
+    body: {
+      operationName: 'getPlaylistTracks',
+      variables: { id: ZVUK_PL_ID, limit: 3, offset: 0 },
+      query: [
+        'query getPlaylistTracks($id: ID!, $limit: Int = 30, $offset: Int = 0) {',
+        '  playlistTracks(id: $id, limit: $limit, offset: $offset) {',
+        '    id title duration',
+        '    artists { id title }',
+        '    release { id title }',
+        '  }',
+        '}'
+      ].join(' ')
+    },
+    expectStatus: [200, 401],
+    expectFields: [
+      { path: 'data.playlistTracks', type: 'array', min: 1 },
+      { path: 'data.playlistTracks[0].id', type: 'number' },
+      { path: 'data.playlistTracks[0].title', type: 'string', notEmpty: true },
+      { path: 'data.playlistTracks[0].duration', type: 'number', min: 1 },
+      { path: 'data.playlistTracks[0].artists', type: 'array', min: 1 },
+      { path: 'data.playlistTracks[0].release.id', type: 'number' }
+    ]
+  },
+  {
+    id: 'Zvuk CDN: Master HLS playlist reachability',
+    url: `https://cdn-hls-slicer.zvuk.com/drm/track/${ZVUK_TRACK_ID}_2/master.m3u8`,
+    method: 'GET',
+    headers: { 'Referer': 'https://zvuk.com/', 'Origin': 'https://zvuk.com' },
+    expectStatus: [200, 403, 404],
+    expectContentType: 'application/'
+  },
+  {
+    id: 'Zvuk CDN: Image domain accessibility',
+    url: `https://cdn-image.zvuk.com/pic?hash=placeholder&id=1&size=large&type=track`,
+    method: 'GET',
+    headers: { 'Referer': 'https://zvuk.com/' },
+    expectStatus: [200, 400, 404]
+  },
+
   // ─── RanobeLib ────────────────────────────────────────────────────────────
   {
     id: 'RanobeLib API: Manga Info',

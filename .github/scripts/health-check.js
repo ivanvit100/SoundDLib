@@ -58,7 +58,8 @@ function checkRule(body, rule) {
 // ─── HTTP-запрос ────────────────────────────────────────────────────────────
 
 async function runCheck(check) {
-  const { id, url, method = 'GET', headers = {}, body, expectFields = [], expectContentType } = check;
+  const { id, url, method = 'GET', headers = {}, body, expectFields = [], expectContentType, expectStatus = 200 } =
+    check;
   const errors = [];
 
   try {
@@ -77,7 +78,9 @@ async function runCheck(check) {
     const res = await fetch(url, init);
     const { status } = res;
 
-    if (status !== 200) errors.push(`HTTP ${status} (ожидался 200)`);
+    const allowedStatuses = Array.isArray(expectStatus) ? expectStatus : [expectStatus];
+    if (!allowedStatuses.includes(status))
+      errors.push(`HTTP ${status} (ожидался ${allowedStatuses.join(' или ')})`);
 
     const contentType = res.headers.get('content-type') || '';
 

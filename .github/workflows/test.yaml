@@ -9,30 +9,21 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
-
-      - name: Upgrade npm
-        run: npm install -g npm@latest
-
-      - name: Clean npm cache
-        run: npm cache clean --force
-
-      - name: Remove node_modules and lock
-        run: rm -rf node_modules package-lock.json
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests
-        run: npm run test
+        run: npm test
