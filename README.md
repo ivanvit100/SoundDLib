@@ -9,7 +9,7 @@
 **Браузерное расширение для загрузки музыки и плейлистов со стриминговых площадок**
 
 [![Tests](https://github.com/ivanvit100/SoundDLib/actions/workflows/test.yaml/badge.svg)](https://github.com/ivanvit/SoundDLib/actions/workflows/test.yaml)
-![Code Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
+![Code Coverage](https://img.shields.io/badge/Coverage-0.82%25-brightgreen)
 [![API Check](https://github.com/ivanvit100/SoundDLib/actions/workflows/health-check.yaml/badge.svg)](https://github.com/ivanvit100/SoundDLib/actions/workflows/health-check.yaml)
 
 ![Version](https://img.shields.io/badge/version-0.0.1-blue)
@@ -115,6 +115,12 @@
 ## Технические детали
 
 - Больше информации в будущем.
+
+---
+
+## Другие проекты
+
+- [`DownloadLib`](https://github.com/ivanvit100/DownloadLib) - загрузка тайтлов с проектов [MangaLib](https://mangalib.me/) и [RanobeLib](https://ranobelib.me/)
 
 ---
 
