@@ -9,10 +9,8 @@
 **Браузерное расширение для загрузки музыки и плейлистов со стриминговых площадок**
 
 [![Tests](https://github.com/ivanvit100/SoundDLib/actions/workflows/test.yaml/badge.svg)](https://github.com/ivanvit/SoundDLib/actions/workflows/test.yaml)
-![Code Coverage](https://img.shields.io/badge/Coverage-0.82%25-brightgreen)
-[![API Check](https://github.com/ivanvit100/SoundDLib/actions/workflows/health-check.yaml/badge.svg)](https://github.com/ivanvit100/SoundDLib/actions/workflows/health-check.yaml)
-
 ![Version](https://img.shields.io/badge/version-0.0.1-blue)
+![Code Coverage](https://img.shields.io/badge/Coverage-0.82%25-brightgreen)
 
 [📦 Скачать](#установка) · [⚠️ Сообщить об ошибке](https://github.com/ivanvit100/SoundDLib/issues) · [✏️ Участвовать в разработке](CONTRIBUTING.md)
 
@@ -38,9 +36,28 @@
   <table>
     <tr>
       <td align="center">
-        <img src="./screenshots/Zvuk_example.png" alt="Zvuk" width="300"/>
+        <img src="./screenshots/track_example.png" alt="Zvuk" width="300"/>
         <br/>
-        <sub><b>Звук</b></sub>
+        <sub><b>Загрузка трека</b></sub>
+      </td>
+      <td align="center">
+        <img src="./screenshots/playlist_example.png" alt="Zvuk" width="300"/>
+        <br/>
+        <sub><b>Загрузка плейлиста</b></sub>
+      </td>
+      <td align="center">
+        <img src="./screenshots/history_example.png" alt="Zvuk" width="300"/>
+        <br/>
+        <sub><b>История загрузок</b></sub>
+      </td>
+    </tr>
+  </table>
+  <table>
+    <tr>
+      <td align="center">
+        <img src="./screenshots/button_example.png" alt="Zvuk" width="300"/>
+        <br/>
+        <sub><b>Кнопка на сайте</b></sub>
       </td>
     </tr>
   </table>
@@ -52,8 +69,32 @@
 
 <table>
   <tr>
-    <td>⬇️ <b>В разработке</b></td>
-    <td>Информация появится позже</td>
+    <td>🌐 <b>Множество сервисов</b></td>
+    <td>Поддержка нескольких музыкальных стриминг-платформ — Zvuk, Яндекс Музыка, YouTube, Spotify, SoundCloud</td>
+  </tr>
+  <tr>
+    <td>🎵 <b>Загрузка треков</b></td>
+    <td>Скачивание отдельных треков в один клик прямо со страницы сервиса</td>
+  </tr>
+  <tr>
+    <td>📋 <b>Загрузка плейлистов</b></td>
+    <td>Скачивание целого плейлиста по файлам или одним ZIP-архивом</td>
+  </tr>
+  <tr>
+    <td>🎛️ <b>Различные форматы</b></td>
+    <td>Выбор формата и качества: MP3, AAC, FLAC, WAV, OGG, OPUS</td>
+  </tr>
+  <tr>
+    <td>▶️ <b>Встроенный плеер</b></td>
+    <td>Предварительное прослушивание трека прямо в попапе расширения</td>
+  </tr>
+  <tr>
+    <td>🔘 <b>Кнопки в интерфейсе</b></td>
+    <td>Кнопки скачивания встраиваются напрямую в интерфейс сайта</td>
+  </tr>
+  <tr>
+    <td>🕓 <b>История загрузок</b></td>
+    <td>Журнал всех скачанных треков с обложками, исполнителями и датами</td>
   </tr>
 </table>
 
@@ -64,6 +105,7 @@
 | Браузер | Поддержка |
 |---|---|
 | **Firefox** | В разработке |
+| **Chromium** | В разработке |
 
 ---
 
