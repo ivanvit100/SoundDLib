@@ -20,7 +20,7 @@
     const isFirefox = !!browserEnv.isFirefox;
 
     const rateLimiter = globalThis.globalRateLimiter
-        ?? new globalThis.RateLimiter({ maxRequestsPerMinute: 80 });
+        ?? new globalThis.RateLimiter();
 
     const store = globalThis.audioStore;
 
@@ -186,12 +186,6 @@
             return true;
         }],
 
-        ['setRateLimit', (msg, _sender, respond) => {
-            rateLimiter.setLimit(msg.limit);
-            respond({ ok: true });
-            return true;
-        }],
-
         ['fetchWithRateLimit', (msg, _sender, respond) => {
             (async () => {
                 try {
@@ -227,10 +221,16 @@
         ['fetchBinary', (msg, _sender, respond) => {
             (async () => {
                 try {
+                    await rateLimiter.trackRequest('binary');
                     const res = await fetch(msg.url, {
                         credentials: 'omit',
                         headers: { 'Referer': 'https://zvuk.com/' }
                     });
+                    if (res.status === 429) {
+                        rateLimiter.throttle(30000);
+                        respond({ ok: false, status: 429 });
+                        return;
+                    }
                     if (!res.ok) { respond({ ok: false, status: res.status }); return; }
                     const buf = await res.arrayBuffer();
                     respond({ ok: true, data: new Uint8Array(buf) });

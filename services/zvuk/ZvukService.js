@@ -25,6 +25,20 @@ query getPlaylist($id: ID!) {
   }
 }`.trim();
 
+    const GQL_PAGINATED_COLLECTION = `
+query getPaginatedCollection($limit: Int = 30, $after: String = null) {
+  paginatedCollection {
+    tracks(pagination: {first: $limit, after: $after}) {
+      items {
+        id title duration hasFlac explicit availability zchan
+        artists { id title image { src } }
+        release { id title image { src } }
+      }
+      page { endCursor }
+    }
+  }
+}`.trim();
+
     const PAGE_LIMIT = 30;
 
     class ZvukService extends global.BaseAudioService {
@@ -38,10 +52,11 @@ query getPlaylist($id: ID!) {
         }
 
         static isPlaylistPage(url) {
-            return /zvuk\.com\/(?:playlist|collection)\/\d+/.test(url);
+            return /zvuk\.com\/(?:(?:playlist|collection)\/\d+|favorites)/.test(url);
         }
 
         extractPlaylistId(url) {
+            if (/\/favorites/.test(url)) return 'favorites';
             const m = url.match(/\/(?:playlist|collection)\/(\d+)/);
             return m ? m[1] : null;
         }
@@ -121,6 +136,8 @@ query getPlaylist($id: ID!) {
         }
 
         async fetchPlaylistMeta(playlistId) {
+            if (playlistId === 'favorites')
+                return { id: 'favorites', title: 'Избранное', cover: null, trackCount: null };
             const data = await this.graphqlFetch(
                 GQL_PLAYLIST_META,
                 { id: String(playlistId) },
@@ -136,6 +153,8 @@ query getPlaylist($id: ID!) {
         }
 
         async fetchAllPlaylistTracks(playlistId, onProgress) {
+            if (playlistId === 'favorites')
+                return this._fetchAllLikedTracks(onProgress);
             const tracks = [];
             let offset = 0;
 
@@ -154,6 +173,33 @@ query getPlaylist($id: ID!) {
                 if (onProgress) onProgress(tracks.length, null);
 
                 if (batch.length === 0) break;
+                await this.delay(150);
+            } while (true);
+
+            return tracks;
+        }
+
+        async _fetchAllLikedTracks(onProgress) {
+            const tracks = [];
+            let after = '';
+
+            do {
+                const data = await this.graphqlFetch(
+                    GQL_PAGINATED_COLLECTION,
+                    { limit: PAGE_LIMIT, after },
+                    'getPaginatedCollection'
+                );
+                const result = data?.data?.paginatedCollection?.tracks;
+                const batch = result?.items ?? [];
+
+                for (const t of batch)
+                    tracks.push(this._normalizeTrackGql(t));
+
+                if (onProgress) onProgress(tracks.length, null);
+
+                const cursor = result?.page?.endCursor ?? null;
+                if (!cursor || batch.length === 0) break;
+                after = cursor;
                 await this.delay(150);
             } while (true);
 

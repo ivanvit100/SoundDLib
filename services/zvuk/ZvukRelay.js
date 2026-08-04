@@ -12,7 +12,6 @@
     class ZvukRelay extends global.BaseRelay {
         constructor(api) {
             super(api);
-            this._setupStyle();
             this._registerHandlers();
             this._registerInjectors();
         }
@@ -164,16 +163,18 @@
         }
 
         _setupStyle() {
-            if (document.getElementById('__sdl_tracklist_style')) return;
+            const target = document.head || document.documentElement;
+            if (!target || document.getElementById('__sdl_tracklist_style')) return;
             const s = document.createElement('style');
             s.id = '__sdl_tracklist_style';
             s.textContent =
                 '[data-entity-id][role="button"]:not(:hover) button[data-sdl-tracklist-dl]{display:none!important}' +
                 '[data-entity-id][role="button"]:hover button[data-sdl-tracklist-dl]{display:inline-flex!important}';
-            document.head.appendChild(s);
+            target.appendChild(s);
         }
 
         _registerInjectors() {
+            this.registerInjector(this._setupStyle.bind(this));
             this.registerInjector(this._injectPlayer.bind(this));
             this.registerInjector(this._injectTrackList.bind(this));
             this.registerInjector(this._injectPlaylistHeader.bind(this));
@@ -271,15 +272,10 @@
             }
         }
 
-        _injectPlaylistHeader() {
-            if (!/\/(?:playlist|collection)\/\d+/.test(location.pathname)) return;
-            const wrapper = document.querySelector('[class*="HeaderButtons_wrapper"]');
-            if (!wrapper || wrapper.querySelector('[data-sdl-playlist-dl]')) return;
+        _makeDlBtn() {
             const btn = document.createElement('div');
             btn.dataset.sdlPlaylistDl = 'true';
             btn.title = 'Скачать плейлист (SoundDLib)';
-            const refBtn = wrapper.querySelector('[class*="GeneralButton_button"]');
-            if (refBtn) btn.className = refBtn.className;
             btn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
             btn.innerHTML =
                 '<span style="--size: 28rem; --gutter: 0rem;"' +
@@ -293,8 +289,34 @@
                 e.stopPropagation();
                 this._api.runtime.sendMessage({ action: 'openDownloadWindow' }).catch(() => {});
             });
+            return btn;
+        }
+
+        _injectPlaylistHeader() {
+            const path = location.pathname;
+            const isFavorites = /\/favorites/.test(path);
+            if (!isFavorites && !/\/(?:playlist|collection)\/\d+/.test(path)) return;
+
+            if (isFavorites) {
+                const wrapper = document.querySelector('[class*="InfoContainer_wrapper"]');
+                if (!wrapper || wrapper.querySelector('[data-sdl-playlist-dl]')) return;
+                const btn = this._makeDlBtn();
+                const refBtn = wrapper.querySelector('[class*="GeneralButton_button"]');
+                if (refBtn) btn.className = refBtn.className;
+                btn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
+                wrapper.appendChild(btn);
+                return;
+            }
+
+            const wrapper = document.querySelector('[class*="HeaderButtons_wrapper"]');
+            if (!wrapper || wrapper.querySelector('[data-sdl-playlist-dl]')) return;
+            const btn = this._makeDlBtn();
+            const refBtn = wrapper.querySelector('[class*="GeneralButton_button"]');
+            if (refBtn) btn.className = refBtn.className;
+            btn.style.cssText = 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
             const cmButtons = wrapper.querySelector('[class*="CmButtons_wrapper"]');
-            if (cmButtons) wrapper.insertBefore(btn, cmButtons); else wrapper.appendChild(btn);
+            if (cmButtons) wrapper.insertBefore(btn, cmButtons);
+            else wrapper.appendChild(btn);
         }
     }
 
