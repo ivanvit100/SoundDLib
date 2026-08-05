@@ -231,7 +231,11 @@
                         respond({ ok: false, status: 429 });
                         return;
                     }
-                    if (!res.ok) { respond({ ok: false, status: res.status }); return; }
+
+                    if (!res.ok) {
+                        respond({ ok: false, status: res.status });
+                        return;
+                    }
                     const buf = await res.arrayBuffer();
                     respond({ ok: true, data: new Uint8Array(buf) });
                 } catch (e) {
