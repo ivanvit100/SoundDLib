@@ -51,7 +51,7 @@ describe('AudioConverter', () => {
         it('бросает если первый байт 0x3C (HTML)', () => {
             const buf = new ArrayBuffer(5000);
             const view = new Uint8Array(buf);
-            view[0] = 0x3C; // '<'
+            view[0] = 0x3C;
             expect(() => converter._validateInput(buf)).toThrow(/HTML/);
         });
 
@@ -105,6 +105,43 @@ describe('AudioConverter', () => {
             const onProgress = vi.fn();
             await converter.convert(buf, 'audio/mpeg', 'mp3', onProgress);
             expect(mockFFmpeg.setProgress).toHaveBeenCalled();
+        });
+
+        it('не вызывает setProgress если нет onProgress (lines 118, 123)', async () => {
+            mockFFmpeg.isLoaded.mockReturnValue(true);
+            mockFFmpeg.setProgress.mockReset();
+            mockFFmpeg.FS.mockImplementation((op) => {
+                if (op === 'readFile') return new Uint8Array(100);
+            });
+            const buf = new ArrayBuffer(5000);
+            const result = await converter.convert(buf, 'audio/mpeg', 'mp3');
+            expect(result).toBeDefined();
+            expect(mockFFmpeg.setProgress).not.toHaveBeenCalled();
+        });
+
+        it('возвращает inputBuffer для x-m4a → aac (branch inputExt === m4a, line 106)', async () => {
+            const buf = new ArrayBuffer(5000);
+            const onProgress = vi.fn();
+            const result = await converter.convert(buf, 'audio/x-m4a', 'aac', onProgress);
+            expect(result).toBe(buf);
+            expect(onProgress).toHaveBeenCalledWith(100);
+        });
+
+        it('использует chrome если getExtensionApi не функция (lines 50-52)', async () => {
+            const origGetExt = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = undefined;
+            globalThis.chrome = { runtime: { getURL: vi.fn(p => `chrome-extension://abc/${p}`) } };
+            mockFFmpeg.isLoaded.mockReturnValue(false);
+            mockFFmpeg.load.mockResolvedValue(undefined);
+            mockFFmpeg.FS.mockImplementation((op) => {
+                if (op === 'readFile') return new Uint8Array(100);
+            });
+            const conv = new globalThis.AudioConverter();
+            const buf = new ArrayBuffer(5000);
+            await conv.convert(buf, 'audio/mpeg', 'mp3', () => {});
+            globalThis.getExtensionApi = origGetExt;
+            globalThis.chrome = undefined;
+            expect(globalThis.FFmpeg.createFFmpeg).toHaveBeenCalled();
         });
 
         it('все форматы поддерживаются: flac, ogg, opus, wav, aac (не m4a)', async () => {

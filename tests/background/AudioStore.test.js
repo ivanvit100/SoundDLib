@@ -5,7 +5,6 @@ describe('AudioStore', () => {
     let store;
 
     beforeEach(() => {
-        // Always work with a fresh AudioStore instance
         store = new globalThis.audioStore.constructor();
     });
 

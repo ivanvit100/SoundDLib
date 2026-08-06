@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { loadModule } from '../../helpers/loadModule.js';
 
 let messageListeners = [];
 let runtimeListeners = [];
 let mockApi;
 
-beforeAll(() => {
+beforeAll(async () => {
     messageListeners = [];
     runtimeListeners = [];
 
@@ -75,7 +74,8 @@ beforeAll(() => {
     globalThis.chrome = mockApi;
     globalThis.browser = undefined;
 
-    loadModule('services/zvuk/ZvukRelay.js');
+    vi.resetModules();
+    await import('../../../services/zvuk/ZvukRelay.js');
 });
 
 function dispatchRuntime(action, payload = {}, sender = {}) {
@@ -199,6 +199,21 @@ describe('ZvukRelay', () => {
             expect(clickSpy).toHaveBeenCalled();
             document.body.innerHTML = '';
         });
+
+        it('использует fallback button если нет PlayButton класса (line 66)', () => {
+            document.body.innerHTML = `
+                <div data-entity-id="track-fallback" role="button">
+                    <button>Play</button>
+                </div>
+            `;
+            const clickSpy = vi.spyOn(document.querySelector('button'), 'click');
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('playTrackById');
+            const result = handler({ zvukTrackId: 'track-fallback' });
+            expect(result.ok).toBe(true);
+            expect(clickSpy).toHaveBeenCalled();
+            document.body.innerHTML = '';
+        });
     });
 
     describe('fetchFromTab handler', () => {
@@ -309,6 +324,26 @@ describe('ZvukRelay', () => {
             const result = handler({ control: 'prevTrack' });
             expect(result.ok).toBe(true);
         });
+
+        it('playPause через mini controls с 3 кнопками (lines 116-117)', () => {
+            document.body.innerHTML = `
+                <div class="mini__abc">
+                    <div class="controls__def">
+                        <button>Prev</button>
+                        <button>Play</button>
+                        <button>Next</button>
+                    </div>
+                </div>
+            `;
+            const buttons = document.querySelectorAll('.controls__def button');
+            const playSpy = vi.spyOn(buttons[1], 'click');
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('playbackControl');
+            const result = handler({ control: 'playPause' });
+            expect(result.ok).toBe(true);
+            expect(playSpy).toHaveBeenCalled();
+            document.body.innerHTML = '';
+        });
     });
 
     describe('getTabMeta handler', () => {
@@ -378,6 +413,25 @@ describe('ZvukRelay', () => {
                 expect.objectContaining({ action: 'openDownloadWindowForTrack', zvukTrackId: '456' })
             );
         });
+
+        it('mouseover изменяет stroke и opacity (lines 224-225)', () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const btn = relay._createTrackListBtn('789', { title: 'T', artist: 'A', cover: '' });
+            document.body.appendChild(btn);
+            btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+            expect(btn.style.opacity).toBe('1');
+            document.body.innerHTML = '';
+        });
+
+        it('mouseout восстанавливает stroke и opacity (lines 228-229)', () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const btn = relay._createTrackListBtn('790', { title: 'T', artist: 'A', cover: '' });
+            document.body.appendChild(btn);
+            btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+            btn.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+            expect(btn.style.opacity).toBe('0.7');
+            document.body.innerHTML = '';
+        });
     });
 
     describe('_setupStyle', () => {
@@ -416,6 +470,34 @@ describe('ZvukRelay', () => {
             relay._injectPlayer();
             const mini = document.querySelector('[class*="mini__"] [class*="controls__"]');
             expect(mini.querySelector('[data-sdl-download]')).toBeTruthy();
+            document.body.innerHTML = '';
+        });
+
+        it('добавляет кнопку в controls с 5 кнопками (line 250)', () => {
+            document.body.innerHTML = `
+                <div class="controls__five">
+                    <button>1</button><button>2</button><button>3</button>
+                    <button>4</button><button>5</button>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlayer();
+            const c = document.querySelector('.controls__five');
+            expect(c.querySelector('[data-sdl-download]')).toBeTruthy();
+            document.body.innerHTML = '';
+        });
+
+        it('добавляет кнопку в мобильный мини плеер (line 255)', () => {
+            document.body.innerHTML = `
+                <div class="MiniPlayerMobile_controls__abc">
+                    <button>Prev</button>
+                    <button>Last</button>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlayer();
+            const mobile = document.querySelector('[class*="MiniPlayerMobile_controls__"]');
+            expect(mobile.querySelector('[data-sdl-download]')).toBeTruthy();
             document.body.innerHTML = '';
         });
     });
@@ -478,6 +560,75 @@ describe('ZvukRelay', () => {
             expect(btns.length).toBe(1);
             document.body.innerHTML = '';
         });
+
+        it('не добавляет кнопку повторно для playlist (line 312 branch)', () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/playlist/789', href: 'https://zvuk.com/playlist/789' },
+                writable: true
+            });
+            document.body.innerHTML = `
+                <div class="HeaderButtons_wrapper__abc">
+                    <div data-sdl-playlist-dl="true">existing</div>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlaylistHeader();
+            const btns = document.querySelectorAll('[data-sdl-playlist-dl]');
+            expect(btns.length).toBe(1);
+            document.body.innerHTML = '';
+        });
+
+        it('добавляет через insertBefore если есть CmButtons (line 318)', () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/playlist/101', href: 'https://zvuk.com/playlist/101' },
+                writable: true
+            });
+            document.body.innerHTML = `
+                <div class="HeaderButtons_wrapper__abc">
+                    <div class="CmButtons_wrapper__xyz">CM</div>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlaylistHeader();
+            const btn = document.querySelector('[data-sdl-playlist-dl]');
+            expect(btn).toBeTruthy();
+            document.body.innerHTML = '';
+        });
+
+        it('добавляет кнопку без refBtn в favorites (line 305 branch)', () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/favorites', href: 'https://zvuk.com/favorites' },
+                writable: true
+            });
+            document.body.innerHTML = `
+                <div class="InfoContainer_wrapper__abc">
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlaylistHeader();
+            const btn = document.querySelector('[data-sdl-playlist-dl]');
+            expect(btn).toBeTruthy();
+            document.body.innerHTML = '';
+        });
+
+        it('_makeDlBtn отправляет openDownloadWindow при клике (lines 289-290)', () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/playlist/456', href: 'https://zvuk.com/playlist/456' },
+                writable: true
+            });
+            document.body.innerHTML = `
+                <div class="HeaderButtons_wrapper__abc">
+                    <button class="GeneralButton_button__xyz">Share</button>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlaylistHeader();
+            const btn = document.querySelector('[data-sdl-playlist-dl]');
+            const prevCalls = mockApi.runtime.sendMessage.mock.calls.length;
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            expect(mockApi.runtime.sendMessage.mock.calls.length).toBeGreaterThan(prevCalls);
+            document.body.innerHTML = '';
+        });
     });
 
     describe('_injectTrackList', () => {
@@ -494,6 +645,41 @@ describe('ZvukRelay', () => {
             const btn = document.querySelector('[data-sdl-tracklist-dl]');
             expect(btn).toBeTruthy();
             document.body.innerHTML = '';
+        });
+
+        it('использует appendChild если нет duration (line 271 else)', () => {
+            document.body.innerHTML = `
+                <div data-entity-id="track-nodur" role="button">
+                    <div class="Controls_controls__abc">
+                    </div>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectTrackList();
+            const controls = document.querySelector('.Controls_controls__abc');
+            expect(controls.querySelector('[data-sdl-tracklist-dl]')).toBeTruthy();
+            document.body.innerHTML = '';
+        });
+    });
+
+    describe('_buildTabMeta', () => {
+        it('использует tabMetaFromSession если только artist (line 163 branch)', () => {
+            Object.defineProperty(navigator, 'mediaSession', {
+                value: {
+                    metadata: {
+                        title: '',
+                        artist: 'Artist Only',
+                        artwork: []
+                    }
+                },
+                writable: true,
+                configurable: true
+            });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('getTabMeta');
+            const result = handler({});
+            expect(result.ok).toBe(true);
+            expect(result.meta.artist).toBe('Artist Only');
         });
     });
 

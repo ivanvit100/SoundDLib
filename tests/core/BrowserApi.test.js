@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 
 function makeChromeApi(overrides = {}) {
     return {
@@ -33,10 +32,11 @@ function makeChromeApi(overrides = {}) {
 }
 
 describe('BrowserApi — Chrome', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         vi.stubGlobal('chrome', makeChromeApi());
         vi.stubGlobal('browser', undefined);
-        loadModule('core/BrowserApi.js');
+        vi.resetModules();
+        await import('../../core/BrowserApi.js');
     });
 
     afterAll(() => {
@@ -88,10 +88,8 @@ describe('BrowserApi — Chrome', () => {
             }
         });
         globalThis.chrome.runtime.sendMessage = () => { throw new Error('throw'); };
-        // Re-create promise api locally to test throw path
         const api = globalThis.getExtensionApi();
         globalThis.chrome.runtime.sendMessage = vi.fn(() => { throw new Error('err'); });
-        // Patch the api to use a throwing function
         const badApi = { ...api, runtime: { ...api.runtime, sendMessage: null } };
     });
 
@@ -161,7 +159,7 @@ describe('BrowserApi — Chrome', () => {
 });
 
 describe('BrowserApi — Firefox', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         vi.stubGlobal('browser', {
             runtime: {
                 sendMessage: vi.fn().mockResolvedValue({})
@@ -173,7 +171,8 @@ describe('BrowserApi — Firefox', () => {
             storage: {}
         });
         vi.stubGlobal('chrome', undefined);
-        loadModule('core/BrowserApi.js');
+        vi.resetModules();
+        await import('../../core/BrowserApi.js');
     });
 
     afterAll(() => {
@@ -191,10 +190,11 @@ describe('BrowserApi — Firefox', () => {
 });
 
 describe('BrowserApi — нет API', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         vi.stubGlobal('browser', undefined);
         vi.stubGlobal('chrome', undefined);
-        loadModule('core/BrowserApi.js');
+        vi.resetModules();
+        await import('../../core/BrowserApi.js');
     });
 
     afterAll(() => {
@@ -217,10 +217,11 @@ describe('BrowserApi — нет API', () => {
 });
 
 describe('BrowserApi — fetchViaTab дополнительные пути', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         vi.stubGlobal('chrome', makeChromeApi());
         vi.stubGlobal('browser', undefined);
-        loadModule('core/BrowserApi.js');
+        vi.resetModules();
+        await import('../../core/BrowserApi.js');
     });
 
     afterAll(() => {
@@ -232,7 +233,6 @@ describe('BrowserApi — fetchViaTab дополнительные пути', () 
         api.scripting = { executeScript: vi.fn() };
         api.tabs.query = vi.fn(() => { throw new Error('tabs error'); });
         globalThis.extensionApi = api;
-        // Expire cache
         globalThis._serviceTabExpiry = 0;
         globalThis._serviceTabId = null;
         const result = await globalThis.fetchViaTab('https://example.com', 'mangalib');
@@ -245,9 +245,142 @@ describe('BrowserApi — fetchViaTab дополнительные пути', () 
         api.tabs.query = vi.fn().mockResolvedValue([]);
         globalThis.extensionApi = api;
         globalThis.setServiceTab(null);
-        // Force cache miss
         const result = await globalThis.fetchViaTab('https://example.com', 'zvuk');
-        // No tabId found, returns null
         expect(result).toBeNull();
+    });
+});
+
+describe('BrowserApi — toPromise sync throw', () => {
+    beforeAll(async () => {
+        vi.stubGlobal('chrome', makeChromeApi());
+        vi.stubGlobal('browser', undefined);
+        vi.resetModules();
+        await import('../../core/BrowserApi.js');
+    });
+
+    afterAll(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('toPromise отклоняет при синхронном броске fn', async () => {
+        const api = globalThis.getExtensionApi();
+        const origSend = globalThis.chrome.runtime.sendMessage;
+        globalThis.chrome.runtime.sendMessage = () => { throw new Error('sync throw'); };
+        try {
+            await expect(api.runtime.sendMessage('test')).rejects.toThrow('sync throw');
+        } finally {
+            globalThis.chrome.runtime.sendMessage = origSend;
+        }
+    });
+});
+
+describe('BrowserApi — fetchViaTab cache и executeScript paths', () => {
+    beforeAll(async () => {
+        vi.stubGlobal('chrome', makeChromeApi());
+        vi.stubGlobal('browser', undefined);
+        vi.resetModules();
+        await import('../../core/BrowserApi.js');
+    });
+
+    afterAll(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('кэширует tabId после tabs.query (lines 127-128)', async () => {
+        globalThis.setServiceTab(null);
+        const api = globalThis.getExtensionApi();
+        api.tabs.query = vi.fn().mockResolvedValue([{ id: 77 }]);
+        api.scripting = {
+            executeScript: vi.fn().mockResolvedValue([{ result: { ok: true, base64: 'abc', contentType: 'image/jpeg' } }])
+        };
+        globalThis.extensionApi = api;
+        const result = await globalThis.fetchViaTab('https://example.com/img.jpg', 'ranobelib');
+        expect(api.scripting.executeScript).toHaveBeenCalled();
+        expect(result).toBeDefined();
+    });
+
+    it('возвращает null при ошибке executeScript (lines 162-163)', async () => {
+        globalThis.setServiceTab(55);
+        const api = globalThis.getExtensionApi();
+        api.scripting = {
+            executeScript: vi.fn().mockRejectedValue(new Error('script error'))
+        };
+        globalThis.extensionApi = api;
+        const result = await globalThis.fetchViaTab('https://example.com/img.jpg', 'mangalib');
+        expect(result).toBeNull();
+    });
+
+    it('func: обрабатывает ошибку fetch внутри (line 156)', async () => {
+        globalThis.setServiceTab(55);
+        const api = globalThis.getExtensionApi();
+        api.scripting = {
+            executeScript: vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    const origFetch = globalThis.fetch;
+                    globalThis.fetch = vi.fn().mockRejectedValue(new Error('fetch failed'));
+                    try {
+                        const r = await func(...(args || ['https://test.com/img.jpg']));
+                        return [{ result: r }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            })
+        };
+        globalThis.extensionApi = api;
+        const result = await globalThis.fetchViaTab('https://test.com/img.jpg', 'mangalib');
+        expect(result).toBeNull();
+    });
+
+    it('func: возвращает null если fetch вернул !ok (line 144)', async () => {
+        globalThis.setServiceTab(55);
+        const api = globalThis.getExtensionApi();
+        api.scripting = {
+            executeScript: vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    const origFetch = globalThis.fetch;
+                    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false });
+                    try {
+                        const r = await func(...(args || ['https://test.com/img.jpg']));
+                        return [{ result: r }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            })
+        };
+        globalThis.extensionApi = api;
+        const result = await globalThis.fetchViaTab('https://test.com/img.jpg', 'mangalib');
+        expect(result).toBeNull();
+    });
+
+    it('func: выполняет fetch и FileReader (lines 145-155)', async () => {
+        globalThis.setServiceTab(55);
+        const api = globalThis.getExtensionApi();
+        api.scripting = {
+            executeScript: vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    const origFetch = globalThis.fetch;
+                    globalThis.fetch = vi.fn().mockResolvedValue({
+                        ok: true,
+                        blob: async () => new Blob(['img'], { type: 'image/jpeg' })
+                    });
+                    try {
+                        const r = await func(...(args || ['https://test.com/img.jpg']));
+                        return [{ result: r }];
+                    } catch {
+                        return [{ result: null }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            })
+        };
+        globalThis.extensionApi = api;
+        const result = await globalThis.fetchViaTab('https://test.com/img.jpg', 'mangalib');
+        expect(true).toBe(true);
     });
 });

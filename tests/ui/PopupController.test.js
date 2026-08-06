@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 
 let mockApi;
 
-beforeAll(() => {
+beforeAll(async () => {
     mockApi = {
         tabs: {
             query: vi.fn().mockResolvedValue([{ id: 1, url: 'https://zvuk.com/track/123' }]),
@@ -55,7 +54,8 @@ beforeAll(() => {
         })
     };
 
-    loadModule('ui/PopupController.js');
+    vi.resetModules();
+    await import('../../ui/PopupController.js');
 });
 
 describe('PopupController', () => {
@@ -130,6 +130,17 @@ describe('PopupController', () => {
             await ctrl._showWrongService();
             expect(globalThis.TemplateLoader.show).toHaveBeenCalledWith('wrong-service');
         });
+
+        it('добавляет listeners на openZvuk и openGithub', async () => {
+            document.body.innerHTML = '<img id="siteLogo" /><a id="openZvuk"></a><a id="openGithub"></a>';
+            globalThis.TemplateLoader.show = vi.fn().mockResolvedValue(undefined);
+            mockApi.tabs.create = vi.fn().mockResolvedValue({});
+            const ctrl = new globalThis.PopupController();
+            await ctrl._showWrongService();
+            document.getElementById('openZvuk').click();
+            document.getElementById('openGithub').click();
+            expect(mockApi.tabs.create).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('_route', () => {
@@ -146,11 +157,12 @@ describe('PopupController', () => {
         it('показывает playlist для playlist страницы', async () => {
             mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 1, url: 'https://zvuk.com/playlist/42' }]);
             document.body.innerHTML = '<img id="siteLogo" /><div id="view"></div>';
+            globalThis.TemplateLoader.show = vi.fn().mockImplementation(async (name, cb) => { if (cb) cb(); });
+            globalThis.PlaylistController = vi.fn(function() {});
             const ctrl = new globalThis.PopupController();
             await ctrl._route();
-            expect(globalThis.TemplateLoader.show).toHaveBeenCalledWith(
-                'playlist', expect.any(Function)
-            );
+            expect(globalThis.TemplateLoader.show).toHaveBeenCalledWith('playlist', expect.any(Function));
+            expect(globalThis.PlaylistController).toHaveBeenCalled();
         });
 
         it('показывает wrong-service если сервис не найден', async () => {
@@ -206,6 +218,22 @@ describe('PopupController', () => {
                 writable: true,
                 configurable: true
             });
+        });
+
+        it('popoutBtn открывает popup окно', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { search: '', href: 'popup.html', pathname: '/popup.html' },
+                writable: true,
+                configurable: true
+            });
+            document.body.innerHTML = '<button id="popoutBtn"></button><button id="historyBtn"></button>';
+            mockApi.windows.create = vi.fn().mockResolvedValue({ id: 2 });
+            const ctrl = new globalThis.PopupController();
+            ctrl._shellBound = false;
+            ctrl._bindShellEvents();
+            document.getElementById('popoutBtn').click();
+            await new Promise(r => setTimeout(r, 10));
+            expect(mockApi.windows.create).toHaveBeenCalled();
         });
 
         it('не вызывает повторно если уже bound', () => {

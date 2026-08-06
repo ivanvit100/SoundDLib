@@ -162,6 +162,30 @@ describe('PlaylistManager', () => {
             await mgr.downloadAll(tracks, 'mp3', makeConverter(), makeService());
             expect(globalThis.DownloadHistory.add).toHaveBeenCalled();
         });
+
+        it('onSeg callback key/init/segment в downloadAll (lines 57-61)', async () => {
+            globalThis.getExtensionApi = () => makeApi();
+            const service = {
+                fetchAllPlaylistTracks: vi.fn().mockResolvedValue(makeTracks()),
+                getAudioData: vi.fn().mockImplementation(async (resp, opts, api, onSeg) => {
+                    onSeg('key', 0, 0);
+                    onSeg('init', 0, 0);
+                    onSeg('segment', 0, 3);
+                    onSeg('segment', 2, 3);
+                    return { data: new ArrayBuffer(10), mimeType: 'audio/mp4' };
+                })
+            };
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = [{ id: '1', title: 'T', artist: 'A', streamUrl: null }];
+            const progressEvents = [];
+            mgr.eventBus.on('download:progress', e => progressEvents.push(e));
+            const result = await mgr.downloadAll(tracks, 'mp3', makeConverter(), service);
+            expect(result.done).toBe(1);
+            const msgs = progressEvents.map(e => e.message);
+            expect(msgs.some(m => m.includes('ключ'))).toBe(true);
+            expect(msgs.some(m => m.includes('инит'))).toBe(true);
+            expect(msgs.some(m => m.includes('сегмент'))).toBe(true);
+        });
     });
 
     describe('downloadAllAsZip', () => {
@@ -196,6 +220,67 @@ describe('PlaylistManager', () => {
             tracks[0].streamUrl = 'https://cdn.example.com/audio.mp3';
             await mgr.downloadAllAsZip(tracks, 'mp3', makeConverter(), 'Playlist', makeService());
             expect(mockWritable.close).toHaveBeenCalled();
+        });
+
+        it('onSeg callback в downloadAllAsZip (lines 148-152)', async () => {
+            globalThis.showSaveFilePicker = undefined;
+            globalThis.getExtensionApi = () => makeApi();
+            const service = {
+                fetchAllPlaylistTracks: vi.fn().mockResolvedValue(makeTracks()),
+                getAudioData: vi.fn().mockImplementation(async (resp, opts, api, onSeg) => {
+                    onSeg('key', 0, 0);
+                    onSeg('init', 0, 0);
+                    onSeg('segment', 1, 2);
+                    return { data: new ArrayBuffer(10), mimeType: 'audio/mp4' };
+                })
+            };
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = [{ id: '1', title: 'T', artist: 'A', streamUrl: null }];
+            const progressEvents = [];
+            mgr.eventBus.on('download:progress', e => progressEvents.push(e));
+            const result = await mgr.downloadAllAsZip(tracks, 'mp3', makeConverter(), 'PL', service);
+            expect(result.done).toBe(1);
+            expect(progressEvents.some(e => e.message?.includes('ключ'))).toBe(true);
+        });
+
+        it('пишет pendingChunks в writable когда chunks не пусты (line 176)', async () => {
+            const testChunk = new Uint8Array([1, 2, 3]);
+            const origFflate = globalThis.fflate;
+            globalThis.fflate = {
+                Zip: class {
+                    constructor(cb) { this._cb = cb; }
+                    add(deflate) { deflate._zip = this; }
+                    end() {}
+                },
+                ZipDeflate: class {
+                    constructor(name, opts) { this.name = name; }
+                    push(data, final) {
+                        if (this._zip?._cb) this._zip._cb(null, data);
+                    }
+                }
+            };
+
+            const mockWritable = { write: vi.fn(), close: vi.fn() };
+            const mockHandle = { createWritable: vi.fn().mockResolvedValue(mockWritable) };
+            globalThis.showSaveFilePicker = vi.fn().mockResolvedValue(mockHandle);
+            globalThis.getExtensionApi = () => makeApi();
+
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = [{ id: '1', title: 'T', artist: 'A', streamUrl: 'https://cdn.example.com/audio.mp3' }];
+            await mgr.downloadAllAsZip(tracks, 'mp3', makeConverter(), 'Playlist', makeService());
+
+            globalThis.fflate = origFflate;
+            globalThis.showSaveFilePicker = undefined;
+            expect(mockWritable.write).toHaveBeenCalled();
+        });
+
+        it('считает failed треки в downloadAllAsZip (lines 180-181)', async () => {
+            globalThis.showSaveFilePicker = undefined;
+            globalThis.getExtensionApi = () => makeApi({ probe: { ok: false, error: 'CDN fail' } });
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = [{ id: '1', title: 'T', artist: 'A', streamUrl: null }];
+            const result = await mgr.downloadAllAsZip(tracks, 'mp3', makeConverter(), 'PL', makeService());
+            expect(result.failed).toBe(1);
         });
     });
 
@@ -265,6 +350,21 @@ describe('PlaylistManager', () => {
             expect(() => mgr.pause()).not.toThrow();
             expect(() => mgr.resume()).not.toThrow();
             expect(() => mgr.stop()).not.toThrow();
+        });
+
+        it('waitIfPaused ожидает пока контроллер на паузе (line 251)', async () => {
+            vi.useFakeTimers();
+            const mgr = new globalThis.PlaylistManager();
+            mgr._controller = mgr._createController();
+            mgr._controller.pause();
+
+            const waitPromise = mgr._controller.waitIfPaused();
+            mgr._controller.resume();
+            vi.advanceTimersByTime(200);
+
+            await waitPromise;
+            vi.useRealTimers();
+            expect(mgr._controller.isPaused()).toBe(false);
         });
     });
 

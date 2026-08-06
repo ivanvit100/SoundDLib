@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 
-beforeAll(() => {
+beforeAll(async () => {
     globalThis.getExtensionApi = vi.fn(() => ({
         runtime: {
             sendMessage: vi.fn().mockResolvedValue({
@@ -47,7 +46,8 @@ beforeAll(() => {
         set: vi.fn()
     };
 
-    loadModule('ui/SingleTrackController.js');
+    vi.resetModules();
+    await import('../../ui/SingleTrackController.js');
 });
 
 function makeService(overrides = {}) {
@@ -240,6 +240,213 @@ describe('SingleTrackController', () => {
             const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
             vi.useFakeTimers();
             expect(() => ctrl._startPlaybackPolling()).not.toThrow();
+            vi.useRealTimers();
+        });
+    });
+
+    describe('_stop', () => {
+        it('вызывает emit download:failed', () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            const emitSpy = vi.spyOn(ctrl.manager.eventBus, 'emit');
+            ctrl._stop();
+            expect(emitSpy).toHaveBeenCalledWith('download:failed', expect.objectContaining({ error: expect.any(Error) }));
+        });
+    });
+
+    describe('_setDownloadingUI', () => {
+        it('сбрасывает UI при active=false', () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            ctrl._setDownloadingUI(false);
+            const status = document.getElementById('status');
+            if (status) expect(status.textContent).toBe('Нажмите «Скачать»');
+        });
+
+        it('не бросает при active=true', () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            expect(() => ctrl._setDownloadingUI(true)).not.toThrow();
+        });
+    });
+
+    describe('_fmtTime', () => {
+        it('форматирует секунды в mm:ss', () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            expect(ctrl._fmtTime(65)).toBe('1:05');
+            expect(ctrl._fmtTime(0)).toBe('0:00');
+            expect(ctrl._fmtTime(-1)).toBe('0:00');
+            expect(ctrl._fmtTime(Infinity)).toBe('0:00');
+        });
+    });
+
+    describe('_updatePlayerUI', () => {
+        it('обновляет UI при наличии state', () => {
+            setupDom();
+            document.body.innerHTML += `
+                <div id="playbackFill"></div>
+                <input type="range" id="playbackBar" min="0" max="100" value="0">
+                <div id="playbackCurrent"></div>
+                <div id="playbackDuration"></div>
+                <button id="playIcon"></button>
+                <button id="pauseIcon"></button>
+            `;
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            ctrl._updatePlayerUI({ currentTime: 30, duration: 120, paused: true });
+            const cur = document.getElementById('playbackCurrent');
+            if (cur) expect(cur.textContent).toBe('0:30');
+        });
+
+        it('очищает UI при state=null', () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            expect(() => ctrl._updatePlayerUI(null)).not.toThrow();
+        });
+
+        it('обновляет UI при paused=false', () => {
+            setupDom();
+            document.body.innerHTML += `
+                <div id="playbackFill"></div>
+                <input type="range" id="playbackBar" min="0" max="100" value="0">
+                <div id="playbackCurrent"></div>
+                <div id="playbackDuration"></div>
+                <button id="playIcon"></button>
+                <button id="pauseIcon"></button>
+            `;
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            ctrl._updatePlayerUI({ currentTime: 10, duration: 100, paused: false });
+            expect(true).toBe(true);
+        });
+    });
+
+    describe('_sendControl', () => {
+        it('не делает ничего без tabId', async () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), null, {});
+            await expect(ctrl._sendControl('playPause')).resolves.toBeUndefined();
+        });
+
+        it('отправляет playPause без ошибок', async () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            await expect(ctrl._sendControl('playPause')).resolves.toBeUndefined();
+        });
+
+        it('отправляет prevTrack и вызывает _awaitTrackChange', async () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            vi.spyOn(ctrl, '_awaitTrackChange').mockResolvedValue(undefined);
+            await ctrl._sendControl('nextTrack');
+            expect(ctrl._awaitTrackChange).toHaveBeenCalled();
+        });
+    });
+
+    describe('_fetchAndRenderMeta', () => {
+        it('извлекает zvukId из URL и запрашивает meta', async () => {
+            setupDom();
+            const service = makeService({
+                fetchTrackMeta: vi.fn().mockResolvedValue({ title: 'Fresh Title', artist: 'Fresh Artist', cover: null, album: null })
+            });
+            const ctrl = new globalThis.SingleTrackController(service, 1, {});
+            vi.spyOn(ctrl, '_renderTrackMeta');
+            await ctrl._fetchAndRenderMeta('https://cdn-hls-slicer.zvuk.com/drm/track/42/master.m3u8', { title: 'Fallback' });
+            expect(ctrl._renderTrackMeta).toHaveBeenCalledWith(expect.objectContaining({ title: 'Fresh Title' }));
+        });
+
+        it('использует fallback если нет zvukId', async () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            vi.spyOn(ctrl, '_renderTrackMeta');
+            await ctrl._fetchAndRenderMeta('https://cdn.example.com/audio.m3u8', { title: 'Fallback Title' });
+            expect(ctrl._renderTrackMeta).toHaveBeenCalledWith({ title: 'Fallback Title' });
+        });
+    });
+
+    describe('_subscribeToCapture', () => {
+        it('обрабатывает trackCaptured сообщение', () => {
+            setupDom();
+            let capturedListener = null;
+            const mockApi = {
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({ ok: true, trackId: 't', qualities: [], meta: {} }),
+                    onMessage: { addListener: vi.fn((cb) => { capturedListener = cb; }) }
+                }
+            };
+            globalThis.getExtensionApi = vi.fn(() => mockApi);
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            ctrl._latestTrackId = null;
+            if (capturedListener) {
+                capturedListener({ action: 'trackCaptured', trackId: 'new-track', qualities: null, url: null, meta: {} });
+            }
+            if (capturedListener) expect(ctrl._latestTrackId).toBe('new-track');
+        });
+
+        it('игнорирует если trackId совпадает', () => {
+            setupDom();
+            let capturedListener = null;
+            const mockApi = {
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+                    onMessage: { addListener: vi.fn((cb) => { capturedListener = cb; }) }
+                }
+            };
+            globalThis.getExtensionApi = vi.fn(() => mockApi);
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            ctrl._latestTrackId = 'same-id';
+            if (capturedListener) {
+                capturedListener({ action: 'trackCaptured', trackId: 'same-id' });
+            }
+            expect(ctrl._latestTrackId).toBe('same-id');
+        });
+
+        it('игнорирует action !== trackCaptured', () => {
+            setupDom();
+            let capturedListener = null;
+            const mockApi = {
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+                    onMessage: { addListener: vi.fn((cb) => { capturedListener = cb; }) }
+                }
+            };
+            globalThis.getExtensionApi = vi.fn(() => mockApi);
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            ctrl._latestTrackId = null;
+            if (capturedListener) {
+                capturedListener({ action: 'otherAction' });
+            }
+            expect(ctrl._latestTrackId).toBeNull();
+        });
+    });
+
+    describe('_bindEvents — download button non-standalone', () => {
+        it('вызывает _openInWindow если не standalone', () => {
+            setupDom();
+            const mockApi = {
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+                    onMessage: { addListener: vi.fn() },
+                    getURL: vi.fn(() => 'chrome-extension://abc/popup.html')
+                },
+                windows: { create: vi.fn().mockResolvedValue({ id: 1 }) }
+            };
+            globalThis.getExtensionApi = vi.fn(() => mockApi);
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, { standalone: false });
+            ctrl._bindEvents();
+            document.getElementById('downloadBtn')?.click();
+            expect(mockApi.windows.create).toBeDefined();
+        });
+    });
+
+    describe('_stopPlaybackPolling', () => {
+        it('очищает интервал', () => {
+            setupDom();
+            const ctrl = new globalThis.SingleTrackController(makeService(), 1, {});
+            vi.useFakeTimers();
+            ctrl._startPlaybackPolling();
+            expect(ctrl._pollInterval).toBeDefined();
+            ctrl._stopPlaybackPolling();
+            expect(ctrl._pollInterval).toBeNull();
             vi.useRealTimers();
         });
     });

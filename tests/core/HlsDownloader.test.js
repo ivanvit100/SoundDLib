@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 describe('HlsDownloader', () => {
-    beforeAll(() => {
-        // Case 1: ZvukHlsDownloader exists → alias
+    beforeAll(async () => {
         globalThis.ZvukHlsDownloader = class FakeZvukHlsDownloader {};
-        loadModule('core/HlsDownloader.js');
+        vi.resetModules();
+        await import('../../core/HlsDownloader.js');
     });
 
     it('HlsDownloader является псевдонимом ZvukHlsDownloader', () => {
@@ -14,14 +13,14 @@ describe('HlsDownloader', () => {
 });
 
 describe('HlsDownloader — без ZvukHlsDownloader', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         globalThis.ZvukHlsDownloader = undefined;
         delete globalThis.HlsDownloader;
-        loadModule('core/HlsDownloader.js');
+        vi.resetModules();
+        await import('../../core/HlsDownloader.js');
     });
 
     it('не создаёт HlsDownloader если ZvukHlsDownloader не существует', () => {
-        // HlsDownloader should not be set in this case
         expect(globalThis.HlsDownloader).toBeUndefined();
     });
 });

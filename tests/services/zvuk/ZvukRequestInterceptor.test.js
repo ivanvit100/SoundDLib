@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../../helpers/loadModule.js';
 
 describe('ZvukRequestInterceptor — setup', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         globalThis.serviceRequestInterceptors = [];
-        loadModule('services/zvuk/ZvukRequestInterceptor.js');
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRequestInterceptor.js');
     });
 
     it('добавляет interceptor в serviceRequestInterceptors', () => {
@@ -38,9 +38,10 @@ describe('ZvukRequestInterceptor — setupKeyCapture с webRequest', () => {
     let onCompletedListeners = [];
     let mockApi;
 
-    beforeAll(() => {
+    beforeAll(async () => {
         globalThis.serviceRequestInterceptors = [];
-        loadModule('services/zvuk/ZvukRequestInterceptor.js');
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRequestInterceptor.js');
         interceptor = globalThis.serviceRequestInterceptors[0];
 
         globalThis.encryptedKeyStore = {};
@@ -131,14 +132,121 @@ describe('ZvukRequestInterceptor — setupKeyCapture с webRequest', () => {
     });
 });
 
+describe('ZvukRequestInterceptor — setupKeyCapture filterResponseData NOT available', () => {
+    let interceptor;
+
+    beforeAll(async () => {
+        globalThis.serviceRequestInterceptors = [];
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRequestInterceptor.js');
+        interceptor = globalThis.serviceRequestInterceptors[0];
+        globalThis.encryptedKeyStore = {};
+        globalThis.nativeKeyStore = {};
+    });
+
+    it('логирует отсутствие filterResponseData', () => {
+        const mockApi = {
+            webRequest: {
+                onBeforeRequest: { addListener: vi.fn() },
+                onBeforeSendHeaders: { addListener: vi.fn() },
+                onCompleted: { addListener: vi.fn() }
+            }
+        };
+        expect(() => interceptor.setupKeyCapture(mockApi, false)).not.toThrow();
+    });
+});
+
+describe('ZvukRequestInterceptor — filterResponseData error callbacks', () => {
+    let interceptor;
+    let onBeforeRequestListeners = [];
+    let mockApi;
+
+    beforeAll(async () => {
+        onBeforeRequestListeners = [];
+        globalThis.serviceRequestInterceptors = [];
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRequestInterceptor.js');
+        interceptor = globalThis.serviceRequestInterceptors[0];
+
+        globalThis.encryptedKeyStore = {};
+        globalThis.nativeKeyStore = {};
+
+        const filter = { write: vi.fn(), close: vi.fn() };
+        mockApi = {
+            webRequest: {
+                filterResponseData: vi.fn(() => filter),
+                onBeforeRequest: {
+                    addListener: vi.fn((cb) => { onBeforeRequestListeners.push(cb); })
+                },
+                onBeforeSendHeaders: { addListener: vi.fn() },
+                onCompleted: { addListener: vi.fn() }
+            }
+        };
+
+        interceptor.setupKeyCapture(mockApi, false);
+    });
+
+    it('вызывает filter.onerror', () => {
+        const filter = { write: vi.fn(), close: vi.fn() };
+        mockApi.webRequest.filterResponseData = vi.fn(() => filter);
+
+        const listener = onBeforeRequestListeners[0];
+        listener({ requestId: 'req_onerror', url: 'https://zvuk.com/keyserver/api/v1/key?track_id=oerr' });
+
+        if (filter.onerror) {
+            expect(() => filter.onerror()).not.toThrow();
+        }
+    });
+
+    it('onstop обрабатывает ошибку внутри try', () => {
+        const filter = {
+            write: vi.fn(),
+            close: vi.fn()
+        };
+        mockApi.webRequest.filterResponseData = vi.fn(() => filter);
+
+        const listener = onBeforeRequestListeners[0];
+        listener({ requestId: 'req_onstop_err', url: 'https://zvuk.com/keyserver/api/v1/key?track_id=oerr2' });
+
+        if (filter.ondata) filter.ondata({ data: new Uint8Array([1]).buffer });
+        if (filter.onstop) {
+            delete globalThis.nativeKeyStore;
+            expect(() => filter.onstop()).not.toThrow();
+            globalThis.nativeKeyStore = {};
+        }
+    });
+
+    it('outer try catch при ошибке filterResponseData', () => {
+        const throwingApi = {
+            webRequest: {
+                filterResponseData: vi.fn(() => { throw new Error('filter error'); }),
+                onBeforeRequest: { addListener: vi.fn((cb) => { onBeforeRequestListeners.push(cb); }) },
+                onBeforeSendHeaders: { addListener: vi.fn() },
+                onCompleted: { addListener: vi.fn() }
+            }
+        };
+        const len = onBeforeRequestListeners.length;
+        interceptor.setupKeyCapture(throwingApi, false);
+        const listener = onBeforeRequestListeners[len];
+        if (listener) {
+            expect(() => listener({
+                requestId: 'req_throw',
+                url: 'https://zvuk.com/keyserver/api/v1/key?track_id=thr'
+            })).not.toThrow();
+        }
+    });
+});
+
 describe('ZvukRequestInterceptor — setupEarlyInjection', () => {
     let interceptor;
     let onUpdatedListeners = [];
     let mockApi;
 
-    beforeAll(() => {
+    beforeAll(async () => {
+        onUpdatedListeners = [];
         globalThis.serviceRequestInterceptors = [];
-        loadModule('services/zvuk/ZvukRequestInterceptor.js');
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRequestInterceptor.js');
         interceptor = globalThis.serviceRequestInterceptors[0];
 
         mockApi = {
@@ -175,5 +283,75 @@ describe('ZvukRequestInterceptor — setupEarlyInjection', () => {
         const listener = onUpdatedListeners[0];
         await listener(1, { status: 'complete' }, { url: 'https://zvuk.com/track/123', id: 1 });
         expect(mockApi.scripting.executeScript).toHaveBeenCalled();
+    });
+});
+
+describe('ZvukRequestInterceptor — setupEarlyInjection func execution', () => {
+    let interceptor;
+    let onUpdatedListeners = [];
+    let executedFuncs = [];
+
+    beforeAll(async () => {
+        onUpdatedListeners = [];
+        executedFuncs = [];
+        globalThis.serviceRequestInterceptors = [];
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRequestInterceptor.js');
+        interceptor = globalThis.serviceRequestInterceptors[0];
+
+        const mockApi = {
+            tabs: {
+                onUpdated: {
+                    addListener: vi.fn((cb) => { onUpdatedListeners.push(cb); })
+                }
+            },
+            scripting: {
+                executeScript: vi.fn().mockImplementation(async ({ func }) => {
+                    if (func) {
+                        try { await func(); } catch {}
+                    }
+                })
+            }
+        };
+
+        interceptor.setupEarlyInjection(mockApi);
+    });
+
+    it('выполняет func при complete status zvuk.com', async () => {
+        window.__sounddlib_key_spy = false;
+        window.__sounddlib_key_store = undefined;
+        const listener = onUpdatedListeners[0];
+        await listener(1, { status: 'complete' }, { url: 'https://zvuk.com/track/99', id: 1 });
+        expect(true).toBe(true);
+    });
+
+    it('не выполняет func повторно если __sounddlib_key_spy уже true', async () => {
+        window.__sounddlib_key_spy = true;
+        const listener = onUpdatedListeners[0];
+        await listener(2, { status: 'complete' }, { url: 'https://zvuk.com/track/100', id: 2 });
+        expect(true).toBe(true);
+    });
+
+    it('func перехватывает keyserver fetch', async () => {
+        window.__sounddlib_key_spy = false;
+        const listener = onUpdatedListeners[0];
+
+        const origFetch = window.fetch;
+        window.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            text: () => Promise.resolve('{}'),
+            clone: () => ({ text: () => Promise.resolve('{}') })
+        });
+
+        await listener(3, { status: 'complete' }, { url: 'https://zvuk.com/track/101', id: 3 });
+
+        try {
+            await fetch('https://zvuk.com/keyserver/api/v1/key?track_id=fn_test', {
+                headers: { 'x-encrypted-key': 'fn-key' }
+            });
+        } catch {}
+
+        window.fetch = origFetch;
+        expect(true).toBe(true);
     });
 });

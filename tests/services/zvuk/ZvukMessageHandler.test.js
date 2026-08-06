@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../../helpers/loadModule.js';
 import '../../../core/RateLimiter.js';
 import '../../../background/AudioStore.js';
 
 let mockApi;
 let tabsQueryListeners = [];
 
-beforeAll(() => {
+beforeAll(async () => {
     tabsQueryListeners = [];
 
     mockApi = {
@@ -43,7 +42,8 @@ beforeAll(() => {
         text: vi.fn().mockResolvedValue('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nhttps://cdn.example.com/128.m3u8')
     });
 
-    loadModule('services/zvuk/ZvukMessageHandler.js');
+    vi.resetModules();
+    await import('../../../services/zvuk/ZvukMessageHandler.js');
 });
 
 function callHandler(action, msg, sender = {}) {
@@ -87,6 +87,20 @@ describe('ZvukMessageHandler', () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, text: vi.fn() });
             const resp = await callHandler('resolveCdnUrl', { zvukId: '000' });
             expect(resp.ok).toBe(false);
+        });
+
+        it('outer catch если serviceRegistry.getAllServices бросает (line 134)', async () => {
+            const origRegistry = globalThis.serviceRegistry;
+            globalThis.serviceRegistry = {
+                getAllServices: vi.fn(() => { throw new Error('registry error'); })
+            };
+            try {
+                const resp = await callHandler('resolveCdnUrl', { zvukId: 'err1' });
+                expect(resp.ok).toBe(false);
+                expect(resp.error).toBeTruthy();
+            } finally {
+                globalThis.serviceRegistry = origRegistry;
+            }
         });
     });
 
@@ -152,6 +166,169 @@ describe('ZvukMessageHandler', () => {
             expect(resp.ok).toBe(false);
             mockApi.scripting = origScripting;
         });
+
+        it('content-script sendMessage бросает — переходит к executeScript (line 39)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            mockApi.tabs.sendMessage = vi.fn(() => { throw new Error('cs failed'); });
+            mockApi.scripting.executeScript = vi.fn().mockResolvedValue([{ result: null }]);
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=csthrow1'
+                });
+                expect(resp.ok).toBe(false);
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+            }
+        });
+
+        it('func: возвращает spy ключ из __sounddlib_key_store (lines 51-52)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
+            mockApi.scripting.executeScript = vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    globalThis.__sounddlib_key_store = { [args[0]]: [1, 2, 3] };
+                    try {
+                        const result = await func(...args);
+                        return [{ result }];
+                    } finally {
+                        delete globalThis.__sounddlib_key_store;
+                    }
+                }
+                return [{ result: null }];
+            });
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=spy1'
+                });
+                expect(resp.ok).toBe(true);
+                expect(resp.source).toBe('spy');
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+            }
+        });
+
+        it('func: выполняет fetch и возвращает данные (lines 53-67)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            const origFetch = globalThis.fetch;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
+            mockApi.scripting.executeScript = vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    globalThis.fetch = vi.fn().mockResolvedValue({
+                        ok: true,
+                        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8))
+                    });
+                    try {
+                        const result = await func(...args);
+                        return [{ result }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            });
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=fetch1'
+                });
+                expect(resp.ok).toBe(true);
+                expect(resp.source).toBe('fetch');
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+            }
+        });
+
+        it('func: возвращает ok:false если fetch не ok (line 63)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            const origFetch = globalThis.fetch;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
+            mockApi.scripting.executeScript = vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+                    try {
+                        const result = await func(...args);
+                        return [{ result }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            });
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=fnotok1'
+                });
+                expect(resp.ok).toBe(false);
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+            }
+        });
+
+        it('func: обрабатывает ошибку fetch внутри (line 69)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            const origFetch = globalThis.fetch;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
+            mockApi.scripting.executeScript = vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    globalThis.fetch = vi.fn().mockRejectedValue(new Error('network fail'));
+                    try {
+                        const result = await func(...args);
+                        return [{ result }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            });
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=errfetch1'
+                });
+                expect(resp.ok).toBe(false);
+                expect(resp.error).toBeTruthy();
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+            }
+        });
+
+        it('tryExecuteScript бросает executeScript — fallback (line 79)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
+            mockApi.scripting.executeScript = vi.fn().mockRejectedValue(new Error('exec threw'));
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=execthrow1'
+                });
+                expect(resp.ok).toBe(false);
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+            }
+        });
+
+        it('outer catch если tabs.query бросает (line 155)', async () => {
+            const origQuery = mockApi.tabs.query;
+            mockApi.tabs.query = vi.fn(() => { throw new Error('query failed'); });
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=qerr1'
+                });
+                expect(resp.ok).toBe(false);
+                expect(resp.error).toBeTruthy();
+            } finally {
+                mockApi.tabs.query = origQuery;
+            }
+        });
     });
 
     describe('probeCdnForTrack', () => {
@@ -191,6 +368,20 @@ describe('ZvukMessageHandler', () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: false });
             const resp = await callHandler('probeCdnForTrack', { zvukId: '111' });
             expect(resp.ok).toBe(false);
+        });
+
+        it('outer catch если serviceRegistry.getAllServices бросает (line 205)', async () => {
+            const origRegistry = globalThis.serviceRegistry;
+            globalThis.serviceRegistry = {
+                getAllServices: vi.fn(() => { throw new Error('registry boom'); })
+            };
+            try {
+                const resp = await callHandler('probeCdnForTrack', { zvukId: 'err2' });
+                expect(resp.ok).toBe(false);
+                expect(resp.error).toBeTruthy();
+            } finally {
+                globalThis.serviceRegistry = origRegistry;
+            }
         });
     });
 });

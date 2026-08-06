@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 
-beforeAll(() => {
+beforeAll(async () => {
     window.__sounddlib_interceptor = false;
-    loadModule('content/AudioInterceptor.js');
+    vi.resetModules();
+    await import('../../content/AudioInterceptor.js');
 });
 
 describe('AudioInterceptor', () => {
@@ -11,10 +11,11 @@ describe('AudioInterceptor', () => {
         expect(window.__sounddlib_interceptor).toBe(true);
     });
 
-    it('не переустанавливается если уже активен', () => {
+    it('не переустанавливается если уже активен', async () => {
         const prevKeyStore = window.__sounddlib_key_store;
         window.__sounddlib_interceptor = true;
-        loadModule('content/AudioInterceptor.js');
+        vi.resetModules();
+        await import('../../content/AudioInterceptor.js');
         expect(window.__sounddlib_key_store).toBe(prevKeyStore);
     });
 
@@ -49,7 +50,6 @@ describe('AudioInterceptor', () => {
             });
 
             const audio = document.createElement('audio');
-            // Set a valid base64 audio data URL
             const binary = String.fromCharCode(72, 101, 108, 108, 111);
             const b64 = btoa(binary);
             Object.defineProperty(audio, 'src', {
@@ -57,11 +57,9 @@ describe('AudioInterceptor', () => {
                 get: function() { return this._src; },
                 configurable: true
             });
-            // call the interceptor's setter
             const srcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
             if (srcDesc?.set) {
                 srcDesc.set.call(audio, `data:audio/mpeg;base64,${b64}`);
-                // message should have been posted
             }
         });
     });
@@ -81,10 +79,8 @@ describe('AudioInterceptor', () => {
 
             window.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-            // The AudioInterceptor has replaced fetch — call the hooked version
             try {
                 await fetch('https://zvuk.com/keyserver/api/v1/key?track_id=test123');
-                // pendingTid should be set
                 expect(window.__sounddlib_pending_tid).toBe('test123');
             } catch {}
 
@@ -106,7 +102,6 @@ describe('AudioInterceptor', () => {
             });
 
             const result = await Response.prototype.arrayBuffer.call(fakeResp);
-            // The hook should have stored it
             if (window.__sounddlib_raw_key_store['rk123']) {
                 expect(window.__sounddlib_raw_key_store['rk123']).toBeDefined();
             }
@@ -135,8 +130,6 @@ describe('AudioInterceptor', () => {
         it('не препендит если тип пустой и строка длинная', () => {
             const longStr = 'x'.repeat(201);
             const blob = new Blob([longStr]);
-            // Empty type also gets spy prepended per the code:
-            // if (!t || t.includes('javascript') ...) -> !t is true for ''
             expect(blob.size).toBeGreaterThan(longStr.length);
         });
     });

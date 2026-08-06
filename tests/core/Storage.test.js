@@ -20,10 +20,17 @@ describe('Storage', () => {
         });
 
         it('возвращает false если localStorage недоступен', () => {
-            // jsdom localStorage.setItem can't be spied on normally;
-            // directly set _available to test the false branch
             const s = new globalThis.Storage();
             s._available = false;
+            expect(s.isAvailable()).toBe(false);
+        });
+
+        it('конструктор обрабатывает ошибку localStorage через прототип', () => {
+            const proto = Object.getPrototypeOf(localStorage);
+            const orig = proto.setItem;
+            proto.setItem = function() { throw new Error('unavailable'); };
+            const s = new globalThis.Storage();
+            proto.setItem = orig;
             expect(s.isAvailable()).toBe(false);
         });
     });
@@ -45,8 +52,12 @@ describe('Storage', () => {
         });
 
         it('возвращает null при ошибке getItem', () => {
-            vi.spyOn(localStorage, 'getItem').mockImplementationOnce(() => { throw new Error('err'); });
-            expect(storage.get('k')).toBeNull();
+            const proto = Object.getPrototypeOf(localStorage);
+            const orig = proto.getItem;
+            proto.getItem = function() { throw new Error('err'); };
+            const result = storage.get('k');
+            proto.getItem = orig;
+            expect(result).toBeNull();
         });
     });
 
@@ -141,8 +152,11 @@ describe('Storage', () => {
         });
 
         it('не падает при ошибке removeItem', () => {
-            vi.spyOn(localStorage, 'removeItem').mockImplementationOnce(() => { throw new Error('err'); });
+            const proto = Object.getPrototypeOf(localStorage);
+            const orig = proto.removeItem;
+            proto.removeItem = function() { throw new Error('err'); };
             expect(() => storage.remove('k')).not.toThrow();
+            proto.removeItem = orig;
         });
     });
 });

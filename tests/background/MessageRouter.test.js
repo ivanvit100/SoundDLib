@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 import '../../core/RateLimiter.js';
 import '../../background/AudioStore.js';
 
@@ -41,7 +40,7 @@ function makeApi() {
 let api;
 let store;
 
-beforeAll(() => {
+beforeAll(async () => {
     api = makeApi();
     globalThis.getExtensionApi = () => api;
     globalThis.getBrowserEnv = () => ({ isFirefox: false, isChromium: true });
@@ -49,7 +48,8 @@ beforeAll(() => {
     globalThis.audioStore = new globalThis.audioStore.constructor();
     store = globalThis.audioStore;
 
-    loadModule('background/MessageRouter.js');
+    vi.resetModules();
+    await import('../../background/MessageRouter.js');
 });
 
 function dispatch(msg, sender = {}) {
@@ -61,9 +61,8 @@ function dispatch(msg, sender = {}) {
                 if (!responded) { responded = true; resolve(resp); }
             };
             const returned = listener(msg, sender, sendResponse);
-            if (!returned) break; // synchronous handlers return false
+            if (!returned) break;
         }
-        // Allow async handlers time to respond
         if (!responded) setTimeout(() => resolve(null), 100);
     });
 }
@@ -322,15 +321,269 @@ describe('MessageRouter — неизвестный action', () => {
     });
 });
 
-describe('MessageRouter — openPopupWindow через tabs', () => {
-    it('использует tabs.create если нет windows', async () => {
-        // Simulate no windows API
-        const apiCopy = { ...api, windows: null };
-        const origGetApi = globalThis.getExtensionApi;
-        globalThis.getExtensionApi = () => apiCopy;
-        // This tests the internal path but we can't easily retrigger it
-        // Just verify the main api path works
-        expect(api.windows.create).toBeDefined();
-        globalThis.getExtensionApi = origGetApi;
+describe('MessageRouter — openPopupWindow без windows API', () => {
+    it('использует tabs.create если windows === null', async () => {
+        const origWindows = api.windows;
+        api.windows = null;
+        api.tabs.create = vi.fn().mockResolvedValue({ id: 99 });
+        try {
+            const resp = await dispatch({ action: 'openWindowWithUrl', url: 'https://example.com' });
+            expect(api.tabs.create).toHaveBeenCalled();
+            expect(resp.ok).toBe(true);
+        } finally {
+            api.windows = origWindows;
+        }
+    });
+
+    it('возвращает false если нет ни windows, ни tabs', async () => {
+        const origWindows = api.windows;
+        const origTabs = api.tabs;
+        api.windows = null;
+        api.tabs = null;
+        try {
+            const resp = await dispatch({ action: 'openWindowWithUrl', url: 'https://example.com' });
+            expect(resp.ok).toBe(false);
+        } finally {
+            api.windows = origWindows;
+            api.tabs = origTabs;
+        }
+    });
+});
+
+describe('MessageRouter — notifyPopup с views', () => {
+    it('вызывает postMessage на views popup', async () => {
+        const postMessageMock = vi.fn();
+        const origGetViews = api.extension.getViews;
+        api.extension.getViews = vi.fn(() => [{ postMessage: postMessageMock }]);
+        try {
+            await dispatch({
+                action: 'audioIntercepted',
+                trackId: 'views-notify-test',
+                meta: { title: 'Views Test' }
+            });
+            expect(postMessageMock).toHaveBeenCalled();
+        } finally {
+            api.extension.getViews = origGetViews;
+        }
+    });
+});
+
+describe('MessageRouter — audioIntercepted catch', () => {
+    it('возвращает ok:false при ошибке store.put', async () => {
+        const storePutSpy = vi.spyOn(globalThis.audioStore, 'put')
+            .mockImplementationOnce(() => { throw new Error('store error'); });
+        try {
+            const resp = await dispatch({
+                action: 'audioIntercepted',
+                trackId: 'catch-test',
+                type: 'audio',
+                mimeType: 'audio/mpeg',
+                data: [1, 2, 3],
+                meta: {}
+            });
+            expect(resp.ok).toBe(false);
+        } finally {
+            storePutSpy.mockRestore();
+        }
+    });
+});
+
+describe('MessageRouter — fetchFromTab catch', () => {
+    it('возвращает ok:false при ошибке tabs.query', async () => {
+        api.tabs.query.mockRejectedValueOnce(new Error('tab query failed'));
+        const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' });
+        expect(resp.ok).toBe(false);
+    });
+});
+
+describe('MessageRouter — fetchAudioTrack fallback paths', () => {
+    it('выполняет прямой fetch если tab возвращает ok:false', async () => {
+        api.tabs.query.mockResolvedValueOnce([{ id: 42 }]);
+        api.tabs.sendMessage.mockResolvedValueOnce({ ok: false });
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+            headers: { get: vi.fn().mockReturnValue('audio/mpeg') }
+        });
+        const resp = await dispatch({ action: 'fetchAudioTrack', url: 'https://cdn.example.com/audio.mp3' });
+        expect(resp.ok).toBe(true);
+    });
+
+    it('возвращает ok:false если прямой fetch не ok', async () => {
+        api.tabs.query.mockResolvedValueOnce([{ id: 42 }]);
+        api.tabs.sendMessage.mockResolvedValueOnce({ ok: false });
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: false, status: 403, headers: { get: vi.fn() }
+        });
+        const resp = await dispatch({ action: 'fetchAudioTrack', url: 'https://cdn.example.com/audio.mp3' });
+        expect(resp.ok).toBe(false);
+    });
+
+    it('возвращает ok:false при исключении', async () => {
+        api.tabs.query.mockRejectedValueOnce(new Error('network failure'));
+        const resp = await dispatch({ action: 'fetchAudioTrack', url: 'https://cdn.example.com/audio.mp3' });
+        expect(resp.ok).toBe(false);
+    });
+});
+
+describe('MessageRouter — fetchWithRateLimit 429 retry и catch', () => {
+    it('повторяет запрос после 429', async () => {
+        const throttleSpy = vi.spyOn(globalThis.globalRateLimiter, 'throttle')
+            .mockImplementation(() => {});
+        const trackSpy = vi.spyOn(globalThis.globalRateLimiter, 'trackRequest')
+            .mockResolvedValue(undefined);
+        globalThis.fetch = vi.fn()
+            .mockResolvedValueOnce({
+                ok: false, status: 429, statusText: 'Too Many Requests',
+                text: vi.fn(), headers: { get: vi.fn() }
+            })
+            .mockResolvedValueOnce({
+                ok: true, status: 200, statusText: 'OK',
+                text: vi.fn().mockResolvedValue('{}'),
+                headers: { get: vi.fn().mockReturnValue('application/json') }
+            });
+        try {
+            const resp = await dispatch({ action: 'fetchWithRateLimit', url: 'https://api.example.com' });
+            expect(throttleSpy).toHaveBeenCalledWith(30000);
+            expect(resp.ok).toBe(true);
+        } finally {
+            throttleSpy.mockRestore();
+            trackSpy.mockRestore();
+        }
+    });
+
+    it('возвращает ok:false при исключении fetch', async () => {
+        const trackSpy = vi.spyOn(globalThis.globalRateLimiter, 'trackRequest')
+            .mockResolvedValue(undefined);
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('network error'));
+        try {
+            const resp = await dispatch({ action: 'fetchWithRateLimit', url: 'https://api.example.com' });
+            expect(resp.ok).toBe(false);
+        } finally {
+            trackSpy.mockRestore();
+        }
+    });
+});
+
+describe('MessageRouter — fetchBinary error paths', () => {
+    it('возвращает ok:false при non-429 статусе ошибки', async () => {
+        const trackSpy = vi.spyOn(globalThis.globalRateLimiter, 'trackRequest')
+            .mockResolvedValue(undefined);
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: false, status: 404, headers: { get: vi.fn() }
+        });
+        try {
+            const resp = await dispatch({ action: 'fetchBinary', url: 'https://example.com/file.bin' });
+            expect(resp.ok).toBe(false);
+            expect(resp.status).toBe(404);
+        } finally {
+            trackSpy.mockRestore();
+        }
+    });
+
+    it('возвращает ok:false при исключении fetch', async () => {
+        const trackSpy = vi.spyOn(globalThis.globalRateLimiter, 'trackRequest')
+            .mockResolvedValue(undefined);
+        globalThis.fetch = vi.fn().mockRejectedValue(new Error('binary fetch error'));
+        try {
+            const resp = await dispatch({ action: 'fetchBinary', url: 'https://example.com/file.bin' });
+            expect(resp.ok).toBe(false);
+        } finally {
+            trackSpy.mockRestore();
+        }
+    });
+});
+
+describe('MessageRouter — window handlers error paths', () => {
+    it('openDownloadWindowForTrack возвращает ok:false при ошибке', async () => {
+        api.windows.create.mockRejectedValueOnce(new Error('window error'));
+        const resp = await dispatch({
+            action: 'openDownloadWindowForTrack',
+            zvukTrackId: '999', title: 'Test', artist: 'Artist'
+        }, { tab: { id: 10 } });
+        expect(resp.ok).toBe(false);
+    });
+
+    it('openDownloadWindow возвращает ok:false при ошибке', async () => {
+        api.windows.create.mockRejectedValueOnce(new Error('window error'));
+        const resp = await dispatch({ action: 'openDownloadWindow' }, { tab: { id: 5 } });
+        expect(resp.ok).toBe(false);
+    });
+
+    it('openPlaylistDownloadWindow возвращает ok:false при ошибке', async () => {
+        api.windows.create.mockRejectedValueOnce(new Error('window error'));
+        const resp = await dispatch({ action: 'openPlaylistDownloadWindow', zip: true }, { tab: { id: 3 } });
+        expect(resp.ok).toBe(false);
+    });
+
+    it('openWindowWithUrl возвращает ok:false при ошибке', async () => {
+        api.windows.create.mockRejectedValueOnce(new Error('window error'));
+        const resp = await dispatch({ action: 'openWindowWithUrl', url: 'https://example.com' });
+        expect(resp.ok).toBe(false);
+    });
+});
+
+describe('MessageRouter — registerZvukHandlers и serviceMessageHandlers', () => {
+    const api3Listeners = [];
+    let api3;
+    const registerMock = vi.fn();
+
+    beforeAll(async () => {
+        api3 = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: {
+                    addListener: vi.fn((cb) => { api3Listeners.push(cb); })
+                },
+                getURL: vi.fn(p => `chrome-extension://abc/${p}`)
+            },
+            tabs: {
+                query: vi.fn().mockResolvedValue([]),
+                create: vi.fn().mockResolvedValue({}),
+                sendMessage: vi.fn().mockResolvedValue({})
+            },
+            windows: {
+                create: vi.fn().mockResolvedValue({ id: 99 }),
+                update: vi.fn().mockResolvedValue({})
+            },
+            extension: { getViews: vi.fn(() => []) }
+        };
+
+        globalThis.getExtensionApi = () => api3;
+        globalThis.getBrowserEnv = () => ({ isFirefox: false, isChromium: true });
+        globalThis.registerZvukHandlers = registerMock;
+        globalThis.serviceMessageHandlers = [
+            [['customSvcAction', (msg, sender, respond) => {
+                respond({ ok: true, custom: true });
+                return true;
+            }]]
+        ];
+
+        vi.resetModules();
+        await import('../../background/MessageRouter.js');
+    });
+
+    function dispatch3(msg, sender = {}) {
+        return new Promise(resolve => {
+            let responded = false;
+            for (const listener of api3Listeners) {
+                const sendResponse = (resp) => {
+                    if (!responded) { responded = true; resolve(resp); }
+                };
+                const returned = listener(msg, sender, sendResponse);
+                if (!returned) break;
+            }
+            setTimeout(() => resolve(null), 100);
+        });
+    }
+
+    it('вызывает registerZvukHandlers при загрузке модуля', () => {
+        expect(registerMock).toHaveBeenCalled();
+    });
+
+    it('регистрирует action из serviceMessageHandlers', async () => {
+        const resp = await dispatch3({ action: 'customSvcAction' });
+        expect(resp?.ok).toBe(true);
+        expect(resp?.custom).toBe(true);
     });
 });

@@ -19,10 +19,12 @@ describe('RateLimiter', () => {
         expect(globalThis.globalRateLimiter).toBeInstanceOf(globalThis.RateLimiter);
     });
 
-    it('загружает существующий globalRateLimiter при повторной загрузке', () => {
-        // globalRateLimiter already exists, re-evaluating the IIFE triggers the else branch
+    it('использует существующий globalRateLimiter (else branch)', async () => {
         const existing = globalThis.globalRateLimiter;
         expect(existing).toBeDefined();
+        vi.resetModules();
+        await import('../../core/RateLimiter.js');
+        expect(globalThis.globalRateLimiter).toBe(existing);
     });
 
     describe('throttle', () => {

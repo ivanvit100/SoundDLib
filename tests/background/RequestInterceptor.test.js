@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 import '../../core/RateLimiter.js';
 import '../../background/AudioStore.js';
 
@@ -8,7 +7,7 @@ describe('RequestInterceptor — Chrome', () => {
     let onCompletedListeners = [];
     let mockApi;
 
-    beforeAll(() => {
+    beforeAll(async () => {
         onBeforeSendListeners = [];
         onCompletedListeners = [];
 
@@ -40,7 +39,8 @@ describe('RequestInterceptor — Chrome', () => {
             getServiceByUrl: vi.fn(() => null)
         };
 
-        loadModule('background/RequestInterceptor.js');
+        vi.resetModules();
+        await import('../../background/RequestInterceptor.js');
     });
 
     it('устанавливает Chrome rate limiter listener', () => {
@@ -78,7 +78,6 @@ describe('RequestInterceptor — Chrome', () => {
                 { name: 'authorization', value: 'Bearer ext-token' }
             ]
         });
-        // From extension → doesn't capture token, just rate limits
         expect(globalThis.authTokenStore.zvuk).not.toBe('ext-token');
     });
 
@@ -114,7 +113,7 @@ describe('RequestInterceptor — Chrome', () => {
 describe('RequestInterceptor — Firefox', () => {
     let onBeforeSendListeners = [];
 
-    beforeAll(() => {
+    beforeAll(async () => {
         onBeforeSendListeners = [];
         const mockApi = {
             webRequest: {
@@ -142,7 +141,8 @@ describe('RequestInterceptor — Firefox', () => {
             getServiceByUrl: vi.fn(() => null)
         };
 
-        loadModule('background/RequestInterceptor.js');
+        vi.resetModules();
+        await import('../../background/RequestInterceptor.js');
     });
 
     it('устанавливает Firefox webRequest listener', () => {
@@ -162,7 +162,7 @@ describe('RequestInterceptor — Firefox', () => {
 describe('RequestInterceptor — handleCapturedUrl', () => {
     let onCompletedListeners = [];
 
-    beforeAll(() => {
+    beforeAll(async () => {
         onCompletedListeners = [];
         const mockApi = {
             webRequest: {
@@ -209,7 +209,8 @@ describe('RequestInterceptor — handleCapturedUrl', () => {
             text: vi.fn().mockResolvedValue('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nhttps://cdn.example.com/track.m3u8')
         });
 
-        loadModule('background/RequestInterceptor.js');
+        vi.resetModules();
+        await import('../../background/RequestInterceptor.js');
     });
 
     it('обрабатывает захваченный URL', async () => {
@@ -221,13 +222,12 @@ describe('RequestInterceptor — handleCapturedUrl', () => {
                 tabId: 1
             });
         }
-        // No crash expected
         expect(true).toBe(true);
     });
 });
 
 describe('RequestInterceptor — без authUrls', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         const mockApi = {
             webRequest: {
                 onBeforeSendHeaders: { addListener: vi.fn() },
@@ -239,7 +239,8 @@ describe('RequestInterceptor — без authUrls', () => {
         globalThis.serviceRequestInterceptors = [{ authUrls: [] }];
         globalThis.serviceRegistry = { getAllServices: vi.fn(() => []) };
 
-        loadModule('background/RequestInterceptor.js');
+        vi.resetModules();
+        await import('../../background/RequestInterceptor.js');
     });
 
     it('не падает если authUrls пустой', () => {

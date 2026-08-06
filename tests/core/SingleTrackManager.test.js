@@ -191,6 +191,55 @@ describe('SingleTrackManager', () => {
             expect(result.success).toBe(true);
         });
 
+        it('progress callback для key, init, segment фаз (lines 34-40)', async () => {
+            globalThis.serviceRegistry.getService = vi.fn(() => ({
+                getAudioData: vi.fn().mockImplementation(async (resp, opts, api, progressCb) => {
+                    progressCb('key', 0, 0);
+                    progressCb('init', 0, 0);
+                    progressCb('segment', 0, 3);
+                    progressCb('segment', 2, 3);
+                    return { data: new ArrayBuffer(100), mimeType: 'audio/mp4' };
+                }),
+                fetchTrackMeta: vi.fn().mockResolvedValue({})
+            }));
+            globalThis.getExtensionApi = () => makeApi({
+                track: {
+                    ok: true, trackId: 'hls-cb', type: 'hls', mimeType: 'audio/mp4',
+                    masterUrl: 'https://cdn.zvuk.com/drm/track/888_2/master.m3u8',
+                    data: null, url: null, meta: {}
+                }
+            });
+            const mgr = new globalThis.SingleTrackManager();
+            const progressEvents = [];
+            mgr.eventBus.on('download:progress', e => progressEvents.push(e));
+            const result = await mgr.download('hls-cb', 'mp3', null, makeConverter());
+            expect(result.success).toBe(true);
+            const msgs = progressEvents.map(e => e.message);
+            expect(msgs).toContain('Получение ключа...');
+            expect(msgs).toContain('Инициализация потока...');
+            expect(msgs.some(m => m.startsWith('Сегменты:'))).toBe(true);
+            globalThis.serviceRegistry.getService = vi.fn((name) => ({
+                getAudioData: vi.fn().mockResolvedValue({ data: new ArrayBuffer(100), mimeType: 'audio/mp4' }),
+                fetchTrackMeta: vi.fn().mockResolvedValue({ title: 'T', artist: 'A', cover: 'https://img.com/c.jpg' })
+            }));
+        });
+
+        it('converter progress callback вызывается (line 106)', async () => {
+            globalThis.getExtensionApi = () => makeApi();
+            const converterWithProgress = {
+                convert: vi.fn().mockImplementation(async (buf, mimeType, format, progressCb) => {
+                    if (progressCb) { progressCb(0); progressCb(50); progressCb(100); }
+                    return new ArrayBuffer(50);
+                })
+            };
+            const mgr = new globalThis.SingleTrackManager();
+            const progressEvents = [];
+            mgr.eventBus.on('download:progress', e => progressEvents.push(e));
+            const result = await mgr.download('track1', 'mp3', null, converterWithProgress);
+            expect(result.success).toBe(true);
+            expect(progressEvents.some(e => e.message === 'Конвертация...')).toBe(true);
+        });
+
         it('бросает если сервис не найден в реестре', async () => {
             globalThis.serviceRegistry.getService = vi.fn(() => null);
             globalThis.getExtensionApi = () => makeApi({

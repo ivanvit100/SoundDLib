@@ -127,6 +127,24 @@ describe('BaseRelay', () => {
             await new Promise(r => setTimeout(r, 10));
             expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'Error: fail' });
         });
+
+        it('MutationObserver callback вызывает _runInjectors (lines 46-47)', async () => {
+            vi.useFakeTimers();
+            let observerCallback = null;
+            window.MutationObserver = class {
+                constructor(cb) { observerCallback = cb; }
+                observe() {}
+                disconnect() {}
+            };
+            const injector = vi.fn();
+            relay.registerInjector(injector);
+            relay.start();
+            injector.mockClear();
+            observerCallback([]);
+            vi.advanceTimersByTime(300);
+            expect(injector).toHaveBeenCalled();
+            vi.useRealTimers();
+        });
     });
 
     describe('_runInjectors', () => {

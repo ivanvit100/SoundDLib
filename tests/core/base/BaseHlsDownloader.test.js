@@ -12,7 +12,6 @@ describe('BaseHlsDownloader', () => {
             }
         };
 
-        // Concrete subclass for testing
         class TestHlsDownloader extends globalThis.BaseHlsDownloader {
             async _fetchKeyMaterial(keyUrl, api) {
                 return { data: Array.from(new Uint8Array(16).fill(1)), xekValue: 'test' };
@@ -141,7 +140,6 @@ describe('BaseHlsDownloader', () => {
                 'raw', new Uint8Array(16).fill(0),
                 { name: 'AES-CBC' }, false, ['decrypt']
             );
-            // May succeed or fail decryption, just shouldn't throw
             const result = await downloader._processInitSegment(initRaw, key, new Uint8Array(16));
             expect(result).toBeInstanceOf(Uint8Array);
         });
@@ -200,6 +198,91 @@ describe('BaseHlsDownloader', () => {
             const base = new globalThis.BaseHlsDownloader();
             expect(() => base._fetchKeyMaterial()).toThrow();
             expect(() => base._resolveKey()).toThrow();
+        });
+
+        it('успешно скачивает два сегмента (lines 59-86)', async () => {
+            const rawKey = new Uint8Array(16).fill(1);
+            const decKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-CBC' }, false, ['decrypt']);
+            const decryptSpy = vi.spyOn(crypto.subtle, 'decrypt')
+                .mockResolvedValue(new Uint8Array(16).fill(7).buffer);
+
+            const m3u8 = [
+                '#EXTM3U',
+                `#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key",IV=0x${'00'.repeat(16)}`,
+                '#EXT-X-MAP:URI="https://cdn.example.com/init.mp4"',
+                '#EXTINF:4.0,', 'https://cdn.example.com/seg001.ts',
+                '#EXTINF:4.0,', 'https://cdn.example.com/seg002.ts'
+            ].join('\n');
+
+            mockApi.runtime.sendMessage.mockImplementation(async (msg) => {
+                if (msg.action === 'fetchWithRateLimit') return { ok: true, body: m3u8 };
+                if (msg.action === 'fetchBinary') return { ok: true, data: new Array(32).fill(0) };
+                return { ok: false };
+            });
+
+            class FullDownloader extends globalThis.BaseHlsDownloader {
+                async _fetchKeyMaterial(keyUrl, api) { return { data: Array.from(rawKey) }; }
+                async _resolveKey(keyMaterial, ivArray, firstSegBytes) {
+                    return { cryptoKey: decKey, firstSegDecrypted: new Uint8Array(16) };
+                }
+            }
+
+            try {
+                const progressFn = vi.fn();
+                const result = await new FullDownloader().download(
+                    'https://cdn.example.com/quality.m3u8', mockApi, progressFn
+                );
+                expect(result.data).toBeDefined();
+                expect(result.mimeType).toBe('audio/mp4');
+                expect(progressFn).toHaveBeenCalledWith('key', expect.anything(), expect.anything());
+                expect(progressFn).toHaveBeenCalledWith('init', expect.anything(), expect.anything());
+                expect(progressFn).toHaveBeenCalledWith('segment', expect.anything(), expect.anything());
+            } finally {
+                decryptSpy.mockRestore();
+            }
+        });
+    });
+
+    describe('_decryptBatch', () => {
+        it('загружает и расшифровывает сегменты (lines 29-36)', async () => {
+            const decryptSpy = vi.spyOn(crypto.subtle, 'decrypt')
+                .mockResolvedValue(new Uint8Array(16).fill(3).buffer);
+
+            mockApi.runtime.sendMessage.mockResolvedValue({ ok: true, data: new Array(32).fill(0) });
+
+            try {
+                const results = await downloader._decryptBatch(
+                    ['https://cdn.example.com/seg001.ts'], mockApi, {}, new Uint8Array(16), 0, 2
+                );
+                expect(results).toHaveLength(1);
+                expect(results[0]).toBeInstanceOf(Uint8Array);
+            } finally {
+                decryptSpy.mockRestore();
+            }
+        });
+
+        it('бросает если fetchBinary не OK (lines 31-35)', async () => {
+            mockApi.runtime.sendMessage.mockResolvedValue({ ok: false, status: 503 });
+            await expect(downloader._decryptBatch(
+                ['https://cdn.example.com/seg001.ts'], mockApi, {}, new Uint8Array(16), 0, 1
+            )).rejects.toThrow(/503/);
+        });
+    });
+
+    describe('_processInitSegment line 103', () => {
+        it('возвращает расшифрованные данные при успешном decrypt', async () => {
+            const initRaw = new Uint8Array(32).fill(1);
+            const decryptResult = new Uint8Array(16).fill(42);
+            const decryptSpy = vi.spyOn(crypto.subtle, 'decrypt')
+                .mockResolvedValue(decryptResult.buffer);
+
+            try {
+                const result = await downloader._processInitSegment(initRaw, {}, new Uint8Array(16));
+                expect(result).toBeInstanceOf(Uint8Array);
+                expect(result[0]).toBe(42);
+            } finally {
+                decryptSpy.mockRestore();
+            }
         });
     });
 

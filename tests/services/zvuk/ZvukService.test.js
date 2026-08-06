@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { loadModule } from '../../helpers/loadModule.js';
 
-beforeAll(() => {
+beforeAll(async () => {
     globalThis.zvukConfig = {
         name: 'zvuk',
         color: '#22c375',
@@ -60,7 +59,8 @@ beforeAll(() => {
         }
     };
 
-    loadModule('services/zvuk/ZvukService.js');
+    vi.resetModules();
+    await import('../../../services/zvuk/ZvukService.js');
 });
 
 describe('ZvukService', () => {

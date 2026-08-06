@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 
 describe('ContentScriptManager', () => {
     let mockApi;
     let installedListeners;
 
-    beforeAll(() => {
+    beforeAll(async () => {
         installedListeners = [];
         mockApi = {
             scripting: {
@@ -36,7 +35,8 @@ describe('ContentScriptManager', () => {
 
         globalThis.getExtensionApi = () => mockApi;
 
-        loadModule('background/ContentScriptManager.js');
+        vi.resetModules();
+        await import('../../background/ContentScriptManager.js');
     });
 
     it('регистрирует onInstalled listener', () => {
@@ -65,7 +65,7 @@ describe('ContentScriptManager', () => {
 });
 
 describe('ContentScriptManager — без API', () => {
-    beforeAll(() => {
+    beforeAll(async () => {
         globalThis.getExtensionApi = () => null;
         globalThis.SERVICE_DEFINITIONS = [
             {
@@ -77,11 +77,11 @@ describe('ContentScriptManager — без API', () => {
                 }
             }
         ];
-        loadModule('background/ContentScriptManager.js');
+        vi.resetModules();
+        await import('../../background/ContentScriptManager.js');
     });
 
     it('ничего не делает без api.scripting', () => {
-        // No crash expected
         expect(true).toBe(true);
     });
 });

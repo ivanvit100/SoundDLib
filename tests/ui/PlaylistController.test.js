@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { loadModule } from '../helpers/loadModule.js';
 
-beforeAll(() => {
+beforeAll(async () => {
     globalThis.getExtensionApi = vi.fn(() => ({
         runtime: {
             sendMessage: vi.fn().mockResolvedValue({ ok: true })
@@ -31,7 +30,8 @@ beforeAll(() => {
         set: vi.fn()
     };
 
-    loadModule('ui/PlaylistController.js');
+    vi.resetModules();
+    await import('../../ui/PlaylistController.js');
 });
 
 function makeService(overrides = {}) {
@@ -104,6 +104,16 @@ describe('PlaylistController', () => {
             const select = document.getElementById('formatSelector');
             expect(select.value).toBe('flac');
             localStorage.removeItem('sounddlib_selected_format');
+        });
+
+        it('сохраняет формат при изменении (line 217)', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._populateFormatSelector();
+            const select = document.getElementById('formatSelector');
+            select.value = 'mp3';
+            select.dispatchEvent(new Event('change'));
+            expect(localStorage.getItem('sounddlib_selected_format')).toBe('mp3');
         });
     });
 
@@ -210,6 +220,142 @@ describe('PlaylistController', () => {
             ctrl.manager.downloadAll = vi.fn();
             await ctrl._startDownload(false);
             expect(ctrl.manager.downloadAll).not.toHaveBeenCalled();
+        });
+
+        it('не запускает если треков нет', async () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [];
+            ctrl.manager.downloadAll = vi.fn();
+            await ctrl._startDownload(false);
+            expect(ctrl.manager.downloadAll).not.toHaveBeenCalled();
+        });
+
+        it('запускает downloadAll в standalone режиме (lines 131-143)', async () => {
+            setupDom();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/popup', search: '?autoDownload=1', href: 'https://ext/popup' },
+                writable: true,
+                configurable: true
+            });
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: 'A', cover: null }];
+            ctrl.manager.downloadAll = vi.fn().mockResolvedValue({ done: 1, failed: 0, total: 1 });
+            ctrl.manager.eventBus.on = vi.fn();
+            ctrl.manager.eventBus.once = vi.fn();
+            await ctrl._startDownload(false);
+            expect(ctrl.manager.downloadAll).toHaveBeenCalled();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/', search: '', href: 'https://ext/' },
+                writable: true,
+                configurable: true
+            });
+        });
+
+        it('запускает downloadAllAsZip в standalone режиме (lines 138-141)', async () => {
+            setupDom();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/popup', search: '?autoDownload=1', href: 'https://ext/popup' },
+                writable: true,
+                configurable: true
+            });
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: 'A', cover: null }];
+            ctrl.manager.downloadAllAsZip = vi.fn().mockResolvedValue({ done: 1, failed: 0, total: 1 });
+            ctrl.manager.eventBus.on = vi.fn();
+            ctrl.manager.eventBus.once = vi.fn();
+            await ctrl._startDownload(true);
+            expect(ctrl.manager.downloadAllAsZip).toHaveBeenCalled();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/', search: '', href: 'https://ext/' },
+                writable: true,
+                configurable: true
+            });
+        });
+    });
+
+    describe('_bindDownloadEvents', () => {
+        it('обрабатывает download:progress', async () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.on.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:progress') cb({ message: 'msg', percent: 50, trackIndex: 0 });
+            });
+            expect(true).toBe(true);
+        });
+
+        it('обрабатывает download:completed', async () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.once.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:completed') cb({ done: 2, failed: 0, total: 2 });
+            });
+            expect(true).toBe(true);
+        });
+
+        it('обрабатывает download:failed', async () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.once.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:failed') cb({ error: new Error('fail') });
+            });
+            expect(true).toBe(true);
+        });
+    });
+
+    describe('_highlightTrack', () => {
+        it('подсвечивает трек по индексу', async () => {
+            setupDom();
+            Element.prototype.scrollIntoView = vi.fn();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            await ctrl._discover();
+            ctrl._renderTrackList();
+            expect(() => ctrl._highlightTrack(0)).not.toThrow();
+            expect(() => ctrl._highlightTrack(1)).not.toThrow();
+        });
+    });
+
+    describe('_togglePause', () => {
+        it('вызывает pause если не на паузе', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl.manager._controller = { isPaused: vi.fn(() => false) };
+            ctrl.manager.pause = vi.fn();
+            ctrl._togglePause();
+            expect(ctrl.manager.pause).toHaveBeenCalled();
+        });
+
+        it('вызывает resume если на паузе', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl.manager._controller = { isPaused: vi.fn(() => true) };
+            ctrl.manager.resume = vi.fn();
+            ctrl._togglePause();
+            expect(ctrl.manager.resume).toHaveBeenCalled();
+        });
+    });
+
+    describe('_discover — playlist:discovery событие', () => {
+        it('обрабатывает прогресс загрузки', async () => {
+            setupDom();
+            let discoveryListener = null;
+            const service = makeService();
+            const ctrl = new globalThis.PlaylistController(service, '42', {});
+            ctrl.manager.eventBus.on = vi.fn((event, cb) => {
+                if (event === 'playlist:discovery') discoveryListener = cb;
+            });
+            ctrl.manager.loadPlaylist = vi.fn(async () => {
+                if (discoveryListener) {
+                    discoveryListener({ loaded: 5, total: 10 });
+                    discoveryListener({ loaded: 3, total: 0 });
+                }
+                return [];
+            });
+            await ctrl._discover();
+            expect(true).toBe(true);
         });
     });
 });

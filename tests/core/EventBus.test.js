@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-// Side-effect import: IIFE attaches EventBus to globalThis (jsdom window)
 import '../../core/EventBus.js';
+
+describe('EventBus — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/EventBus.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.EventBus).toBeDefined();
+    });
+});
 
 describe('EventBus', () => {
     let bus;
