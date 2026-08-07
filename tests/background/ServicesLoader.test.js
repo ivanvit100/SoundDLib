@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+describe('ServicesLoader — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        globalThis.SERVICE_DEFINITIONS = [];
+        globalThis.importScripts = vi.fn();
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../background/ServicesLoader.js');
+        vi.unstubAllGlobals();
+        expect(true).toBe(true);
+    });
+});
+
 describe('ServicesLoader — importScripts путь', () => {
     beforeAll(() => {
         globalThis.SERVICE_DEFINITIONS = [

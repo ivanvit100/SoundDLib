@@ -200,7 +200,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('использует fallback button если нет PlayButton класса (line 66)', () => {
+        it('использует fallback button если нет PlayButton класса', () => {
             document.body.innerHTML = `
                 <div data-entity-id="track-fallback" role="button">
                     <button>Play</button>
@@ -325,7 +325,7 @@ describe('ZvukRelay', () => {
             expect(result.ok).toBe(true);
         });
 
-        it('playPause через mini controls с 3 кнопками (lines 116-117)', () => {
+        it('playPause через mini controls с 3 кнопками', () => {
             document.body.innerHTML = `
                 <div class="mini__abc">
                     <div class="controls__def">
@@ -414,7 +414,7 @@ describe('ZvukRelay', () => {
             );
         });
 
-        it('mouseover изменяет stroke и opacity (lines 224-225)', () => {
+        it('mouseover изменяет stroke и opacity', () => {
             const relay = new globalThis.ZvukRelay(mockApi);
             const btn = relay._createTrackListBtn('789', { title: 'T', artist: 'A', cover: '' });
             document.body.appendChild(btn);
@@ -423,7 +423,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('mouseout восстанавливает stroke и opacity (lines 228-229)', () => {
+        it('mouseout восстанавливает stroke и opacity', () => {
             const relay = new globalThis.ZvukRelay(mockApi);
             const btn = relay._createTrackListBtn('790', { title: 'T', artist: 'A', cover: '' });
             document.body.appendChild(btn);
@@ -473,7 +473,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('добавляет кнопку в controls с 5 кнопками (line 250)', () => {
+        it('добавляет кнопку в controls с 5 кнопками', () => {
             document.body.innerHTML = `
                 <div class="controls__five">
                     <button>1</button><button>2</button><button>3</button>
@@ -487,7 +487,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('добавляет кнопку в мобильный мини плеер (line 255)', () => {
+        it('добавляет кнопку в мобильный мини плеер', () => {
             document.body.innerHTML = `
                 <div class="MiniPlayerMobile_controls__abc">
                     <button>Prev</button>
@@ -561,7 +561,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('не добавляет кнопку повторно для playlist (line 312 branch)', () => {
+        it('не добавляет кнопку повторно для playlist', () => {
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/playlist/789', href: 'https://zvuk.com/playlist/789' },
                 writable: true
@@ -578,7 +578,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('добавляет через insertBefore если есть CmButtons (line 318)', () => {
+        it('добавляет через insertBefore если есть CmButtons', () => {
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/playlist/101', href: 'https://zvuk.com/playlist/101' },
                 writable: true
@@ -595,7 +595,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('добавляет кнопку без refBtn в favorites (line 305 branch)', () => {
+        it('добавляет кнопку без refBtn в favorites', () => {
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/favorites', href: 'https://zvuk.com/favorites' },
                 writable: true
@@ -611,7 +611,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('_makeDlBtn отправляет openDownloadWindow при клике (lines 289-290)', () => {
+        it('_makeDlBtn отправляет openDownloadWindow при клике', () => {
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/playlist/456', href: 'https://zvuk.com/playlist/456' },
                 writable: true
@@ -647,7 +647,7 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
-        it('использует appendChild если нет duration (line 271 else)', () => {
+        it('использует appendChild если нет duration', () => {
             document.body.innerHTML = `
                 <div data-entity-id="track-nodur" role="button">
                     <div class="Controls_controls__abc">
@@ -663,7 +663,7 @@ describe('ZvukRelay', () => {
     });
 
     describe('_buildTabMeta', () => {
-        it('использует tabMetaFromSession если только artist (line 163 branch)', () => {
+        it('использует tabMetaFromSession если только artist', () => {
             Object.defineProperty(navigator, 'mediaSession', {
                 value: {
                     metadata: {

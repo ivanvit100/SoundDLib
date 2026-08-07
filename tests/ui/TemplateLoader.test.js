@@ -2,6 +2,16 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 import '../../ui/TemplateLoader.js';
 
+describe('TemplateLoader — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../ui/TemplateLoader.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.TemplateLoader).toBeDefined();
+    });
+});
+
 describe('TemplateLoader', () => {
     beforeEach(() => {
         document.body.innerHTML = '<div id="view"></div>';

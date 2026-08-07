@@ -58,6 +58,16 @@ beforeAll(async () => {
     await import('../../ui/PopupController.js');
 });
 
+describe('PopupController — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../ui/PopupController.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.PopupController).toBeDefined();
+    });
+});
+
 describe('PopupController', () => {
     it('PopupController класс существует', () => {
         expect(globalThis.PopupController).toBeDefined();
@@ -276,6 +286,88 @@ describe('PopupController', () => {
             await ctrl._restoreMainView();
             expect(document.getElementById('logoInfo').textContent).toBe('');
             expect(routeSpy).toHaveBeenCalled();
+        });
+
+        it('не бросает без logoInfo в DOM', async () => {
+            document.body.innerHTML = '';
+            const ctrl = new globalThis.PopupController();
+            const routeSpy = vi.spyOn(ctrl, '_route').mockResolvedValue(undefined);
+            await expect(ctrl._restoreMainView()).resolves.not.toThrow();
+        });
+    });
+
+    describe('_route — zvukTrackId', () => {
+        it('устанавливает trackMeta если zvukTrackId задан в URL', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { search: '?zvukTrackId=456&trackTitle=Test&trackArtist=Art&trackCover=https://img.com/c.jpg', href: '...', pathname: '/' },
+                writable: true,
+                configurable: true
+            });
+            mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 1, url: 'https://zvuk.com/track/123' }]);
+            document.body.innerHTML = '<img id="siteLogo" /><div id="view"></div>';
+            globalThis.TemplateLoader.show = vi.fn().mockImplementation(async (name, cb) => { if (cb) cb(); });
+            globalThis.SingleTrackController = vi.fn(function() {});
+            const ctrl = new globalThis.PopupController();
+            await ctrl._route();
+            expect(globalThis.SingleTrackController).toHaveBeenCalled();
+            Object.defineProperty(window, 'location', {
+                value: { search: '', href: 'popup.html', pathname: '/popup.html' },
+                writable: true,
+                configurable: true
+            });
+        });
+
+        it('trackMeta с пустым title/artist/cover', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { search: '?zvukTrackId=789', href: '...', pathname: '/' },
+                writable: true,
+                configurable: true
+            });
+            mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 1, url: 'https://zvuk.com/track/123' }]);
+            document.body.innerHTML = '<img id="siteLogo" /><div id="view"></div>';
+            globalThis.TemplateLoader.show = vi.fn().mockImplementation(async (name, cb) => { if (cb) cb(); });
+            globalThis.SingleTrackController = vi.fn(function() {});
+            const ctrl = new globalThis.PopupController();
+            await ctrl._route();
+            expect(globalThis.SingleTrackController).toHaveBeenCalled();
+            Object.defineProperty(window, 'location', {
+                value: { search: '', href: 'popup.html', pathname: '/popup.html' },
+                writable: true,
+                configurable: true
+            });
+        });
+    });
+
+    describe('_bindShellEvents — edge cases', () => {
+        it('popoutBtn без tabId в tabs', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { search: '', href: 'popup.html', pathname: '/popup.html' },
+                writable: true,
+                configurable: true
+            });
+            document.body.innerHTML = '<button id="popoutBtn"></button><button id="historyBtn"></button>';
+            mockApi.tabs.query = vi.fn().mockResolvedValue([{ }]);
+            mockApi.windows.create = vi.fn().mockResolvedValue({ id: 2 });
+            const ctrl = new globalThis.PopupController();
+            ctrl._shellBound = false;
+            ctrl._bindShellEvents();
+            document.getElementById('popoutBtn').click();
+            await new Promise(r => setTimeout(r, 10));
+            expect(mockApi.windows.create).toHaveBeenCalled();
+        });
+
+        it('historyBtn без logoInfo в DOM', () => {
+            Object.defineProperty(window, 'location', {
+                value: { search: '', href: 'popup.html', pathname: '/popup.html' },
+                writable: true,
+                configurable: true
+            });
+            document.body.innerHTML = '<button id="popoutBtn"></button><button id="historyBtn"></button>';
+            globalThis.TemplateLoader.show = vi.fn().mockImplementation(async (name, cb) => { if (cb) cb(); });
+            const ctrl = new globalThis.PopupController();
+            ctrl._shellBound = false;
+            ctrl._bindShellEvents();
+            expect(() => document.getElementById('historyBtn').click()).not.toThrow();
         });
     });
 });

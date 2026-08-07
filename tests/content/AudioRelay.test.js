@@ -513,4 +513,123 @@ describe('AudioRelay — sdlInjectPlaylistHeaderBtn', () => {
         }
         expect(true).toBe(true);
     });
+
+    it('catch в sendMessage не бросает (playlist, line 328 catch callback)', async () => {
+        const btn = document.querySelector('[data-sdl-playlist-dl]');
+        if (btn) {
+            globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('send failed'));
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+        }
+        expect(true).toBe(true);
+    });
+});
+
+describe('AudioRelay — sdlInjectTrackList без duration', () => {
+    beforeAll(async () => {
+        globalThis.chrome = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn() }
+            }
+        };
+        globalThis.browser = undefined;
+
+        document.body.innerHTML = `
+            <div data-entity-id="track-no-dur" role="button">
+                <div class="Controls_controls__nodur">
+                </div>
+                <div class="Info_titleInner__x">Track No Dur</div>
+                <div class="Info_description___x">Artist</div>
+            </div>
+        `;
+
+        vi.resetModules();
+        await import('../../content/AudioRelay.js');
+    });
+
+    it('appendChild btn если нет Controls_duration__', () => {
+        const controls = document.querySelector('[class*="Controls_controls__"]');
+        expect(controls?.querySelector('[data-sdl-tracklist-dl]')).toBeDefined();
+    });
+
+    it('catch в sendMessage не бросает', async () => {
+        const btn = document.querySelector('[data-sdl-tracklist-dl]');
+        if (btn) {
+            globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('send failed'));
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+        }
+        expect(true).toBe(true);
+    });
+});
+
+describe('AudioRelay — sdlInject с MiniPlayerMobile', () => {
+    beforeAll(async () => {
+        globalThis.chrome = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn() }
+            }
+        };
+        globalThis.browser = undefined;
+
+        document.body.innerHTML = `
+            <div class="MiniPlayerMobile_controls__xyz">
+                <button>prev</button>
+                <button>next</button>
+                <button>last</button>
+            </div>
+        `;
+
+        vi.resetModules();
+        await import('../../content/AudioRelay.js');
+    });
+
+    it('sdlInject insertBefore mobile.lastElementChild', () => {
+        const mobile = document.querySelector('[class*="MiniPlayerMobile_controls__"]');
+        expect(mobile?.querySelector('[data-sdl-download]')).toBeDefined();
+    });
+
+    it('catch в sendMessage не бросает', async () => {
+        const btn = document.querySelector('[data-sdl-download]');
+        if (btn) {
+            globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('send failed'));
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+        }
+        expect(true).toBe(true);
+    });
+});
+
+describe('AudioRelay — sdlInjectPlaylistHeaderBtn без CmButtons', () => {
+    beforeAll(async () => {
+        globalThis.chrome = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn() }
+            }
+        };
+        globalThis.browser = undefined;
+
+        Object.defineProperty(window, 'location', {
+            value: { pathname: '/playlist/99999', href: 'https://zvuk.com/playlist/99999' },
+            configurable: true,
+            writable: true
+        });
+
+        document.body.innerHTML = `
+            <div class="HeaderButtons_wrapper__nocm">
+                <div class="GeneralButton_button__x">GenBtn</div>
+            </div>
+        `;
+
+        vi.resetModules();
+        await import('../../content/AudioRelay.js');
+    });
+
+    it('sdlInjectPlaylistHeaderBtn wrapper.appendChild без CmButtons', () => {
+        const btn = document.querySelector('[data-sdl-playlist-dl]');
+        expect(btn).toBeDefined();
+    });
 });

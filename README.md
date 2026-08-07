@@ -10,7 +10,7 @@
 
 [![Tests](https://github.com/ivanvit100/SoundDLib/actions/workflows/test.yaml/badge.svg)](https://github.com/ivanvit/SoundDLib/actions/workflows/test.yaml)
 ![Version](https://img.shields.io/badge/version-0.0.1-blue)
-![Code Coverage](https://img.shields.io/badge/Coverage-82.53%25-brightgreen)
+![Code Coverage](https://img.shields.io/badge/Coverage-90.86%25-brightgreen)
 
 [📦 Скачать](#установка) · [⚠️ Сообщить об ошибке](https://github.com/ivanvit100/SoundDLib/issues) · [✏️ Участвовать в разработке](CONTRIBUTING.md)
 

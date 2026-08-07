@@ -1,6 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '../../core/Storage.js';
 import '../../core/DownloadHistory.js';
+
+describe('DownloadHistory — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/DownloadHistory.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.DownloadHistory).toBeDefined();
+    });
+});
 
 describe('DownloadHistory', () => {
     beforeEach(() => {

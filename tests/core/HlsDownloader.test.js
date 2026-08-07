@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+describe('HlsDownloader — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        globalThis.ZvukHlsDownloader = class FakeZvukHlsDownloader {};
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/HlsDownloader.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.HlsDownloader).toBeDefined();
+    });
+});
+
 describe('HlsDownloader', () => {
     beforeAll(async () => {
         globalThis.ZvukHlsDownloader = class FakeZvukHlsDownloader {};

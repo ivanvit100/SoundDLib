@@ -3,6 +3,16 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import '../../../core/base/BaseHlsDownloader.js';
 import '../../../services/zvuk/ZvukHlsDownloader.js';
 
+describe('ZvukHlsDownloader — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukHlsDownloader.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.ZvukHlsDownloader).toBeDefined();
+    });
+});
+
 describe('ZvukHlsDownloader', () => {
     it('ZvukHlsDownloader класс существует', () => {
         expect(globalThis.ZvukHlsDownloader).toBeDefined();
@@ -143,6 +153,15 @@ describe('ZvukHlsDownloader', () => {
             const result = d._deriveKeyCandidates(raw, 'test-salt');
             expect(result).toHaveLength(1);
         });
+
+        it('возвращает [rawBytes] если _decryptZvukKey возвращает null', () => {
+            const d = new globalThis.ZvukHlsDownloader();
+            vi.spyOn(d, '_decryptZvukKey').mockReturnValue(null);
+            const raw = new Uint8Array(16).fill(5);
+            const result = d._deriveKeyCandidates(raw, 'some-xek');
+            expect(result).toHaveLength(1);
+            expect(result[0]).toBeInstanceOf(Uint8Array);
+        });
     });
 
     describe('_decryptZvukKey', () => {
@@ -192,7 +211,6 @@ describe('ZvukHlsDownloader', () => {
 
         it('rot=1 сдвигает на 1 бит вправо с переносом', () => {
             const d = new globalThis.ZvukHlsDownloader();
-            // 0b10110101 = 0xB5, ror1 = 0b11011010 = 0xDA
             expect(d._ror8(0b10110101, 1)).toBe(0b11011010);
         });
 

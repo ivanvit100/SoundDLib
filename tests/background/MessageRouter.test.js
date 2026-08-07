@@ -553,10 +553,16 @@ describe('MessageRouter — registerZvukHandlers и serviceMessageHandlers', () 
         globalThis.getBrowserEnv = () => ({ isFirefox: false, isChromium: true });
         globalThis.registerZvukHandlers = registerMock;
         globalThis.serviceMessageHandlers = [
-            [['customSvcAction', (msg, sender, respond) => {
-                respond({ ok: true, custom: true });
-                return true;
-            }]]
+            [
+                ['customSvcAction', (msg, sender, respond) => {
+                    respond({ ok: true, custom: true });
+                    return true;
+                }],
+                ['listTracks', (_msg, _sender, respond) => {
+                    respond({ ok: true, override: true });
+                    return true;
+                }]
+            ]
         ];
 
         vi.resetModules();
@@ -585,5 +591,187 @@ describe('MessageRouter — registerZvukHandlers и serviceMessageHandlers', () 
         const resp = await dispatch3({ action: 'customSvcAction' });
         expect(resp?.ok).toBe(true);
         expect(resp?.custom).toBe(true);
+    });
+
+    it('не перезаписывает существующий handler из serviceMessageHandlers', async () => {
+        const resp = await dispatch3({ action: 'listTracks' });
+        expect(resp?.ok).toBe(true);
+        expect(resp?.override).toBeUndefined();
+    });
+});
+
+describe('MessageRouter — audioIntercepted без type/mimeType/meta', () => {
+    it('принимает трек с masterUrl без type/mimeType/meta/qualities', async () => {
+        const resp = await dispatch({
+            action: 'audioIntercepted',
+            trackId: 'no-type-test',
+            masterUrl: 'https://example.com/master.m3u8'
+        });
+        expect(resp.ok).toBe(true);
+        expect(resp.trackId).toBe('no-type-test');
+    });
+});
+
+describe('MessageRouter — getLatestTrack/getTrack без type', () => {
+    it('getLatestTrack возвращает type audio если type null', async () => {
+        store.clear();
+        store.put('nt1', { id: 'nt1', type: null, mimeType: 'audio/mpeg', data: null, url: 'https://test.com', masterUrl: null, qualities: null, meta: {}, capturedAt: Date.now() });
+        const resp = await dispatch({ action: 'getLatestTrack' });
+        expect(resp.type).toBe('audio');
+    });
+
+    it('getTrack возвращает data и type audio если type null и data есть', async () => {
+        store.clear();
+        store.put('nt2', { id: 'nt2', type: null, mimeType: 'audio/mpeg', data: new Uint8Array([1, 2, 3]), url: null, masterUrl: null, qualities: null, meta: {}, capturedAt: Date.now() });
+        const resp = await dispatch({ action: 'getTrack', trackId: 'nt2' });
+        expect(resp.type).toBe('audio');
+        expect(Array.isArray(resp.data)).toBe(true);
+    });
+});
+
+describe('MessageRouter — fetchFromTab дополнительные ветки', () => {
+    it('tabsRootA/tabsSubA null → ||[] fallback, sender tab используется', async () => {
+        api.tabs.query.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+        api.tabs.sendMessage.mockResolvedValueOnce({ ok: true, body: 'data', status: 200 });
+        const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' }, { tab: { id: 55 } });
+        expect(resp).toBeTruthy();
+    });
+
+    it('msg без headers → {} дефолт', async () => {
+        api.tabs.query.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+        api.tabs.sendMessage.mockResolvedValueOnce({ ok: true, body: 'data', status: 200 });
+        const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' });
+        expect(resp.ok).toBe(true);
+    });
+
+    it('result null → ?? {ok:false} дефолт', async () => {
+        api.tabs.query.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+        api.tabs.sendMessage.mockResolvedValueOnce(null);
+        const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' });
+        expect(resp.ok).toBe(false);
+    });
+});
+
+describe('MessageRouter — fetchAudioTrack дополнительные ветки', () => {
+    it('authTokenStore.zvuk существует → используется Bearer токен', async () => {
+        globalThis.authTokenStore = { zvuk: 'test-bearer-token' };
+        api.tabs.query.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+        api.tabs.sendMessage.mockResolvedValueOnce({ ok: true, data: [1, 2, 3], mimeType: 'audio/mpeg' });
+        try {
+            const resp = await dispatch({ action: 'fetchAudioTrack', url: 'https://cdn.example.com/audio.mp3' });
+            expect(resp.ok).toBe(true);
+        } finally {
+            globalThis.authTokenStore = undefined;
+        }
+    });
+
+    it('нет tabId → прямой fetch, mimeType || audio/mpeg', async () => {
+        api.tabs.query.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+            headers: { get: vi.fn().mockReturnValue(null) }
+        });
+        const resp = await dispatch({ action: 'fetchAudioTrack', url: 'https://cdn.example.com/audio.mp3' });
+        expect(resp.ok).toBe(true);
+        expect(resp.mimeType).toBe('audio/mpeg');
+    });
+});
+
+describe('MessageRouter — fetchWithRateLimit с options в msg', () => {
+    it('не перезаписывает credentials если options.credentials уже задан', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: true, status: 200, statusText: 'OK',
+            text: vi.fn().mockResolvedValue('{}'),
+            headers: { get: vi.fn().mockReturnValue('application/json') }
+        });
+        const resp = await dispatch({
+            action: 'fetchWithRateLimit',
+            url: 'https://api.example.com',
+            options: { credentials: 'include' }
+        });
+        expect(resp.ok).toBe(true);
+    });
+});
+
+describe('MessageRouter — getTrackByZvukId без type и url', () => {
+    it('возвращает type audio и url null если type null и url null', async () => {
+        store.put('nt_zvuk', { id: 'nt_zvuk', type: null, url: null, masterUrl: 'https://cdn.zvuk.com/track/555/master.m3u8', qualities: null, mimeType: 'audio/mp4', meta: {}, capturedAt: Date.now() });
+        const resp = await dispatch({ action: 'getTrackByZvukId', zvukId: '555' });
+        expect(resp.ok).toBe(true);
+        expect(resp.type).toBe('audio');
+        expect(resp.url).toBeNull();
+    });
+});
+
+describe('MessageRouter — streamUrlCaptured когда store существует', () => {
+    it('добавляет в существующий store без пересоздания', async () => {
+        globalThis.streamUrlStore = new Map([['existing-key', 'https://cdn.example.com/existing.m3u8']]);
+        const resp = await dispatch({ action: 'streamUrlCaptured', cdnTrackId: 'new-cdn-key', streamUrl: 'https://cdn.example.com/new.m3u8' });
+        expect(resp.ok).toBe(true);
+        expect(globalThis.streamUrlStore.get('new-cdn-key')).toBe('https://cdn.example.com/new.m3u8');
+        expect(globalThis.streamUrlStore.get('existing-key')).toBe('https://cdn.example.com/existing.m3u8');
+    });
+});
+
+describe('MessageRouter — getStreamUrlByZvukId нет совпадений в непустом store', () => {
+    it('возвращает ok:false если записи есть но не совпадают', async () => {
+        globalThis.streamUrlStore = new Map([['111_1', 'https://cdn.example.com/111.m3u8']]);
+        const resp = await dispatch({ action: 'getStreamUrlByZvukId', zvukId: '222' });
+        expect(resp.ok).toBe(false);
+    });
+});
+
+describe('MessageRouter — openDownloadWindowForTrack без tabId/title/artist', () => {
+    it('открывает окно без tabId title artist', async () => {
+        api.windows.create.mockResolvedValue({ id: 42 });
+        const resp = await dispatch({
+            action: 'openDownloadWindowForTrack',
+            zvukTrackId: '12345'
+        }, {});
+        expect(resp.ok).toBe(true);
+    });
+});
+
+describe('MessageRouter — openDownloadWindow без sender tab', () => {
+    it('открывает окно без tabId', async () => {
+        api.windows.create.mockResolvedValue({ id: 44 });
+        const resp = await dispatch({ action: 'openDownloadWindow' }, {});
+        expect(resp.ok).toBe(true);
+    });
+});
+
+describe('MessageRouter — openPlaylistDownloadWindow без tab и без zip', () => {
+    it('открывает окно без tabId и без zip', async () => {
+        api.windows.create.mockResolvedValue({ id: 45 });
+        const resp = await dispatch({ action: 'openPlaylistDownloadWindow' }, {});
+        expect(resp.ok).toBe(true);
+    });
+});
+
+describe('MessageRouter — openPopupWindow без win.id', () => {
+    it('не вызывает windows.update если win.id отсутствует', async () => {
+        api.windows.create.mockResolvedValueOnce({});
+        api.windows.update.mockClear();
+        const resp = await dispatch({ action: 'openWindowWithUrl', url: 'https://example.com' });
+        expect(resp.ok).toBe(true);
+        expect(api.windows.update).not.toHaveBeenCalled();
+    });
+});
+
+describe('MessageRouter — notifyPopup без extension.getViews', () => {
+    it('работает если extension.getViews не функция', async () => {
+        const origGetViews = api.extension.getViews;
+        api.extension.getViews = undefined;
+        try {
+            const resp = await dispatch({
+                action: 'audioIntercepted',
+                trackId: 'no-getviews-test',
+                meta: { title: 'NoGetViews' }
+            });
+            expect(resp.ok).toBe(true);
+        } finally {
+            api.extension.getViews = origGetViews;
+        }
     });
 });

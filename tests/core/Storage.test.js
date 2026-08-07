@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '../../core/Storage.js';
 
+describe('Storage — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/Storage.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.Storage).toBeDefined();
+    });
+});
+
 describe('Storage', () => {
     let storage;
 

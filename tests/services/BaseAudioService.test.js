@@ -12,6 +12,16 @@ beforeAll(() => {
 
 import '../../services/BaseAudioService.js';
 
+describe('BaseAudioService — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../services/BaseAudioService.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.BaseAudioService).toBeDefined();
+    });
+});
+
 describe('BaseAudioService', () => {
     let service;
 
@@ -55,6 +65,29 @@ describe('BaseAudioService', () => {
             expect(api).toBe(globalThis.chrome);
             globalThis.getExtensionApi = origGetApi;
             globalThis.chrome = undefined;
+        });
+
+        it('возвращает browser если нет getExtensionApi и chrome', () => {
+            const origGetApi = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = undefined;
+            globalThis.chrome = undefined;
+            globalThis.browser = { runtime: { sendMessage: vi.fn() } };
+            service = new globalThis.BaseAudioService({ name: 'test' });
+            const api = service.extensionApi;
+            expect(api).toBe(globalThis.browser);
+            globalThis.getExtensionApi = origGetApi;
+            globalThis.browser = undefined;
+        });
+
+        it('возвращает null если нет ни getExtensionApi ни chrome ни browser', () => {
+            const origGetApi = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = undefined;
+            globalThis.chrome = undefined;
+            globalThis.browser = undefined;
+            service = new globalThis.BaseAudioService({ name: 'test' });
+            const api = service.extensionApi;
+            expect(api).toBeNull();
+            globalThis.getExtensionApi = origGetApi;
         });
     });
 

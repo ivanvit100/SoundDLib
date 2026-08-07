@@ -1,5 +1,21 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 
+describe('AudioConverter — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/AudioConverter.js');
+        vi.unstubAllGlobals();
+        vi.stubGlobal('FFmpeg', { createFFmpeg: vi.fn(() => mockFFmpeg) });
+        vi.stubGlobal('getExtensionApi', () => ({
+            runtime: { getURL: vi.fn(p => `chrome-extension://abc/${p}`) }
+        }));
+        globalThis.chrome = undefined;
+        globalThis.browser = undefined;
+        expect(globalThis.AudioConverter).toBeDefined();
+    });
+});
+
 const mockFFmpeg = {
     isLoaded: vi.fn(() => false),
     load: vi.fn().mockResolvedValue(undefined),
@@ -107,7 +123,7 @@ describe('AudioConverter', () => {
             expect(mockFFmpeg.setProgress).toHaveBeenCalled();
         });
 
-        it('не вызывает setProgress если нет onProgress (lines 118, 123)', async () => {
+        it('не вызывает setProgress если нет onProgress', async () => {
             mockFFmpeg.isLoaded.mockReturnValue(true);
             mockFFmpeg.setProgress.mockReset();
             mockFFmpeg.FS.mockImplementation((op) => {
@@ -127,7 +143,7 @@ describe('AudioConverter', () => {
             expect(onProgress).toHaveBeenCalledWith(100);
         });
 
-        it('использует chrome если getExtensionApi не функция (lines 50-52)', async () => {
+        it('использует chrome если getExtensionApi не функция', async () => {
             const origGetExt = globalThis.getExtensionApi;
             globalThis.getExtensionApi = undefined;
             globalThis.chrome = { runtime: { getURL: vi.fn(p => `chrome-extension://abc/${p}`) } };
@@ -141,6 +157,24 @@ describe('AudioConverter', () => {
             await conv.convert(buf, 'audio/mpeg', 'mp3', () => {});
             globalThis.getExtensionApi = origGetExt;
             globalThis.chrome = undefined;
+            expect(globalThis.FFmpeg.createFFmpeg).toHaveBeenCalled();
+        });
+
+        it('использует browser если нет getExtensionApi и chrome', async () => {
+            const origGetExt = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = undefined;
+            globalThis.chrome = undefined;
+            globalThis.browser = { runtime: { getURL: vi.fn(p => `ext://abc/${p}`) } };
+            mockFFmpeg.isLoaded.mockReturnValue(false);
+            mockFFmpeg.load.mockResolvedValue(undefined);
+            mockFFmpeg.FS.mockImplementation((op) => {
+                if (op === 'readFile') return new Uint8Array(100);
+            });
+            const conv = new globalThis.AudioConverter();
+            const buf = new ArrayBuffer(5000);
+            await conv.convert(buf, 'audio/mpeg', 'mp3', () => {});
+            globalThis.getExtensionApi = origGetExt;
+            globalThis.browser = undefined;
             expect(globalThis.FFmpeg.createFFmpeg).toHaveBeenCalled();
         });
 

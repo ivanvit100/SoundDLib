@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 beforeAll(() => {
     globalThis.SERVICE_DEFINITIONS = [{
@@ -9,6 +9,16 @@ beforeAll(() => {
 });
 
 import '../../services/ServiceRegistry.js';
+
+describe('ServiceRegistry — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../services/ServiceRegistry.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.ServiceRegistry).toBeDefined();
+    });
+});
 
 describe('ServiceRegistry', () => {
     let registry;
@@ -70,6 +80,21 @@ describe('ServiceRegistry', () => {
             registry.register(ErrorService);
             expect(() => registry.getServiceByUrl('https://test.com')).not.toThrow();
             expect(registry.getServiceByUrl('https://test.com')).toBeNull();
+        });
+
+        it('продолжает поиск если первый сервис не совпадает', () => {
+            class NoMatchService {
+                constructor() { this.name = 'nomatch'; }
+                static matches(_url) { return false; }
+            }
+            class MatchService {
+                constructor() { this.name = 'match'; }
+                static matches(url) { return url.includes('match'); }
+            }
+            registry.register(NoMatchService);
+            registry.register(MatchService);
+            const result = registry.getServiceByUrl('https://match.com');
+            expect(result).toBeInstanceOf(MatchService);
         });
     });
 

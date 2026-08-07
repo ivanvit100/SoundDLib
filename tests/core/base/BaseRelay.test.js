@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '../../../core/base/BaseRelay.js';
 
+describe('BaseRelay — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../../core/base/BaseRelay.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.BaseRelay).toBeDefined();
+    });
+});
+
 describe('BaseRelay', () => {
     let relay;
     let mockApi;
@@ -128,7 +138,7 @@ describe('BaseRelay', () => {
             expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'Error: fail' });
         });
 
-        it('MutationObserver callback вызывает _runInjectors (lines 46-47)', async () => {
+        it('MutationObserver callback вызывает _runInjectors', async () => {
             vi.useFakeTimers();
             let observerCallback = null;
             window.MutationObserver = class {
@@ -144,6 +154,20 @@ describe('BaseRelay', () => {
             vi.advanceTimersByTime(300);
             expect(injector).toHaveBeenCalled();
             vi.useRealTimers();
+        });
+
+        it('observe использует documentElement если document.body null', () => {
+            let observeTarget = null;
+            window.MutationObserver = class {
+                constructor(cb) {}
+                observe(target) { observeTarget = target; }
+                disconnect() {}
+            };
+            const origBody = document.body;
+            Object.defineProperty(document, 'body', { value: null, configurable: true });
+            relay.start();
+            Object.defineProperty(document, 'body', { value: origBody, configurable: true });
+            expect(observeTarget).toBe(document.documentElement);
         });
     });
 

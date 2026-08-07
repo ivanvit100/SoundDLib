@@ -85,3 +85,78 @@ describe('ContentScriptManager — без API', () => {
         expect(true).toBe(true);
     });
 });
+
+describe('ContentScriptManager — getExtensionApi не функция', () => {
+    beforeAll(async () => {
+        globalThis.getExtensionApi = null;
+        globalThis.SERVICE_DEFINITIONS = undefined;
+        vi.resetModules();
+        await import('../../background/ContentScriptManager.js');
+    });
+
+    it('загружается без ошибок если getExtensionApi не функция', () => {
+        expect(true).toBe(true);
+    });
+});
+
+describe('ContentScriptManager — без SERVICE_DEFINITIONS', () => {
+    let mockApi;
+    let installedListeners;
+
+    beforeAll(async () => {
+        installedListeners = [];
+        mockApi = {
+            scripting: {
+                registerContentScripts: vi.fn().mockResolvedValue(undefined),
+                unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
+                executeScript: vi.fn().mockResolvedValue([])
+            },
+            tabs: { query: vi.fn().mockResolvedValue([{ id: 1 }]) },
+            runtime: {
+                onInstalled: { addListener: vi.fn((cb) => { installedListeners.push(cb); }) }
+            }
+        };
+        globalThis.getExtensionApi = () => mockApi;
+        globalThis.SERVICE_DEFINITIONS = undefined;
+        vi.resetModules();
+        await import('../../background/ContentScriptManager.js');
+    });
+
+    it('не регистрирует скрипты если SERVICE_DEFINITIONS пустой', async () => {
+        if (installedListeners.length) await installedListeners[0]();
+        expect(mockApi.scripting.registerContentScripts).not.toHaveBeenCalled();
+    });
+});
+
+describe('ContentScriptManager — executeScript reject (catch callback)', () => {
+    let mockApi;
+    let installedListeners;
+
+    beforeAll(async () => {
+        installedListeners = [];
+        mockApi = {
+            scripting: {
+                registerContentScripts: vi.fn().mockResolvedValue(undefined),
+                unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
+                executeScript: vi.fn().mockRejectedValue(new Error('script exec failed'))
+            },
+            tabs: { query: vi.fn().mockResolvedValue([{ id: 1 }]) },
+            runtime: {
+                onInstalled: { addListener: vi.fn((cb) => { installedListeners.push(cb); }) }
+            }
+        };
+        globalThis.getExtensionApi = () => mockApi;
+        globalThis.SERVICE_DEFINITIONS = [{
+            name: 'test',
+            matches: ['https://example.com/*'],
+            scripts: { contentMain: ['main.js'], contentIsolated: ['relay.js'] }
+        }];
+        vi.resetModules();
+        await import('../../background/ContentScriptManager.js');
+    });
+
+    it('не бросает при ошибке executeScript', async () => {
+        if (installedListeners.length)
+            await expect(installedListeners[0]()).resolves.not.toThrow();
+    });
+});

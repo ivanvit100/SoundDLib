@@ -13,8 +13,11 @@ beforeAll(async () => {
 
     window.__sounddlib_interceptor = false;
 
+    vi.useFakeTimers();
     vi.resetModules();
     await import('../../../services/zvuk/ZvukInterceptor.js');
+    vi.clearAllTimers();
+    vi.useRealTimers();
 });
 
 describe('ZvukInterceptor', () => {
@@ -52,8 +55,11 @@ describe('ZvukInterceptor', () => {
 
     describe('_hookStateBridge', () => {
         it('не бросает при запуске', () => {
+            vi.useFakeTimers();
             const interceptor = new globalThis.ZvukInterceptor();
             expect(() => interceptor._hookStateBridge()).not.toThrow();
+            vi.clearAllTimers();
+            vi.useRealTimers();
         });
     });
 
@@ -192,6 +198,7 @@ describe('ZvukInterceptor', () => {
             const el = document.getElementById('__sdl_state');
             if (el) expect(el.dataset.t).toBeDefined();
 
+            vi.clearAllTimers();
             vi.useRealTimers();
         });
 
@@ -218,6 +225,7 @@ describe('ZvukInterceptor', () => {
                 vi.advanceTimersByTime(500);
             }
 
+            vi.clearAllTimers();
             vi.useRealTimers();
             expect(true).toBe(true);
         });
@@ -228,6 +236,7 @@ describe('ZvukInterceptor', () => {
             const interceptor = new globalThis.ZvukInterceptor();
             interceptor._hookStateBridge();
             vi.advanceTimersByTime(500);
+            vi.clearAllTimers();
             vi.useRealTimers();
             expect(true).toBe(true);
         });

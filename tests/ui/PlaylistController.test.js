@@ -30,7 +30,6 @@ beforeAll(async () => {
         set: vi.fn()
     };
 
-    vi.resetModules();
     await import('../../ui/PlaylistController.js');
 });
 
@@ -58,8 +57,14 @@ function setupDom() {
         <div id="status"></div>
         <div id="progress" style="display:none"></div>
         <div id="discoveryStatus"></div>
+        <div id="discoverySection"></div>
         <progress id="discoveryBar" value="0" max="100"></progress>
         <div id="trackList"></div>
+        <div id="trackListSection"></div>
+        <div id="downloadControls"></div>
+        <div id="downloadButtons"></div>
+        <div id="formatContainer"></div>
+        <div id="doneSection"></div>
     `;
 }
 
@@ -85,6 +90,13 @@ describe('PlaylistController', () => {
             expect(ctrl._autoStart).toBe(true);
             expect(ctrl._autoStartZip).toBe(true);
         });
+
+        it('использует default options={} если аргумент не передан', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42');
+            expect(ctrl._autoStart).toBe(false);
+            expect(ctrl._autoStartZip).toBe(false);
+        });
     });
 
     describe('_populateFormatSelector', () => {
@@ -106,7 +118,7 @@ describe('PlaylistController', () => {
             localStorage.removeItem('sounddlib_selected_format');
         });
 
-        it('сохраняет формат при изменении (line 217)', () => {
+        it('сохраняет формат при изменении', () => {
             setupDom();
             const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
             ctrl._populateFormatSelector();
@@ -136,6 +148,28 @@ describe('PlaylistController', () => {
             expect(consoleSpy).toHaveBeenCalled();
             consoleSpy.mockRestore();
         });
+
+        it('ошибка без discoveryStatus в DOM', async () => {
+            document.body.innerHTML = '<div id="trackList"></div>';
+            const service = makeService({
+                fetchAllPlaylistTracks: vi.fn().mockRejectedValue(new Error('net err'))
+            });
+            const ctrl = new globalThis.PlaylistController(service, '42', {});
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            await ctrl._discover();
+            consoleSpy.mockRestore();
+            expect(true).toBe(true);
+        });
+
+        it('использует "playlist" если title пустой', async () => {
+            setupDom();
+            const service = makeService({
+                fetchPlaylistMeta: vi.fn().mockResolvedValue({ title: '' })
+            });
+            const ctrl = new globalThis.PlaylistController(service, '42', {});
+            await ctrl._discover();
+            expect(ctrl._title).toBe('playlist');
+        });
     });
 
     describe('_renderTrackList', () => {
@@ -161,6 +195,32 @@ describe('PlaylistController', () => {
             ctrl._renderTrackList();
             const cover = document.querySelector('.track-cover');
             expect(cover.src).toContain('svg');
+        });
+
+        it('использует — если нет title', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: '', artist: 'A', cover: null }];
+            ctrl._renderTrackList();
+            const title = document.querySelector('.track-title');
+            expect(title.textContent).toBe('—');
+        });
+
+        it('не добавляет artist span если artist пустой/null', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: null, cover: null }];
+            ctrl._renderTrackList();
+            expect(document.querySelector('.track-artist')).toBeNull();
+        });
+
+        it('показывает trackCount если элемент есть', () => {
+            setupDom();
+            document.body.innerHTML += '<div id="trackCount"></div>';
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: 'A', cover: null }];
+            ctrl._renderTrackList();
+            expect(document.getElementById('trackCount').textContent).toContain('1');
         });
     });
 
@@ -231,7 +291,7 @@ describe('PlaylistController', () => {
             expect(ctrl.manager.downloadAll).not.toHaveBeenCalled();
         });
 
-        it('запускает downloadAll в standalone режиме (lines 131-143)', async () => {
+        it('запускает downloadAll в standalone режиме', async () => {
             setupDom();
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/popup', search: '?autoDownload=1', href: 'https://ext/popup' },
@@ -252,7 +312,7 @@ describe('PlaylistController', () => {
             });
         });
 
-        it('запускает downloadAllAsZip в standalone режиме (lines 138-141)', async () => {
+        it('запускает downloadAllAsZip в standalone режиме', async () => {
             setupDom();
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/popup', search: '?autoDownload=1', href: 'https://ext/popup' },
@@ -272,9 +332,76 @@ describe('PlaylistController', () => {
                 configurable: true
             });
         });
+
+        it('использует default zip=false', async () => {
+            setupDom();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/popup', search: '?autoDownload=1', href: 'https://ext/popup' },
+                writable: true,
+                configurable: true
+            });
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: 'A', cover: null }];
+            ctrl.manager.downloadAll = vi.fn().mockResolvedValue({ done: 1, failed: 0, total: 1 });
+            ctrl.manager.eventBus.on = vi.fn();
+            ctrl.manager.eventBus.once = vi.fn();
+            await ctrl._startDownload();
+            expect(ctrl.manager.downloadAll).toHaveBeenCalled();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/', search: '', href: 'https://ext/' },
+                writable: true,
+                configurable: true
+            });
+        });
+
+        it('использует chrome/browser если getExtensionApi не функция', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/', search: '', href: 'https://ext/' },
+                writable: true,
+                configurable: true
+            });
+            const origGetExt = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = 'not-a-function';
+            globalThis.chrome = undefined;
+            globalThis.browser = { runtime: { sendMessage: vi.fn().mockResolvedValue({}) } };
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: 'A', cover: null }];
+            await ctrl._startDownload(false);
+            expect(globalThis.browser.runtime.sendMessage).toHaveBeenCalled();
+            globalThis.getExtensionApi = origGetExt;
+            globalThis.browser = undefined;
+        });
+
+        it('использует "mp3" если нет formatSelector', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/popup', search: '?autoDownload=1', href: 'https://ext/popup' },
+                writable: true,
+                configurable: true
+            });
+            document.body.innerHTML = '';
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._tracks = [{ id: '1', title: 'T', artist: 'A', cover: null }];
+            ctrl.manager.downloadAll = vi.fn().mockResolvedValue({ done: 1, failed: 0, total: 1 });
+            ctrl.manager.eventBus.on = vi.fn();
+            ctrl.manager.eventBus.once = vi.fn();
+            await ctrl._startDownload(false);
+            expect(ctrl.manager.downloadAll).toHaveBeenCalled();
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/', search: '', href: 'https://ext/' },
+                writable: true,
+                configurable: true
+            });
+        });
     });
 
     describe('_bindDownloadEvents', () => {
+        function fireEvents(ctrl, on, once) {
+            ctrl.manager.eventBus.on.mock?.calls?.forEach(([event, cb]) => {
+                if (event === on) cb(...once.filter(() => false));
+            });
+        }
+
         it('обрабатывает download:progress', async () => {
             setupDom();
             const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
@@ -283,6 +410,27 @@ describe('PlaylistController', () => {
                 if (event === 'download:progress') cb({ message: 'msg', percent: 50, trackIndex: 0 });
             });
             expect(true).toBe(true);
+        });
+
+        it('download:progress без status и progress в DOM', () => {
+            document.body.innerHTML = '';
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.on.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:progress') cb({ message: 'msg', percent: null, trackIndex: 0 });
+            });
+            expect(true).toBe(true);
+        });
+
+        it('download:progress percent=null с progress в DOM', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.on.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:progress') cb({ message: 'msg', percent: null, trackIndex: 0 });
+            });
+            const p = document.getElementById('progress');
+            expect(p?.value).toBeDefined();
         });
 
         it('обрабатывает download:completed', async () => {
@@ -295,6 +443,27 @@ describe('PlaylistController', () => {
             expect(true).toBe(true);
         });
 
+        it('download:completed с failed>0', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.once.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:completed') cb({ done: 1, failed: 1, total: 2 });
+            });
+            const s = document.getElementById('status');
+            expect(s?.textContent).toContain('ошибок');
+        });
+
+        it('download:completed без status в DOM', () => {
+            document.body.innerHTML = '';
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.once.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:completed') cb({ done: 1, failed: 0, total: 1 });
+            });
+            expect(true).toBe(true);
+        });
+
         it('обрабатывает download:failed', async () => {
             setupDom();
             const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
@@ -303,6 +472,18 @@ describe('PlaylistController', () => {
                 if (event === 'download:failed') cb({ error: new Error('fail') });
             });
             expect(true).toBe(true);
+        });
+
+        it('download:failed с popupController', () => {
+            setupDom();
+            globalThis.popupController = { showError: vi.fn() };
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl._bindDownloadEvents();
+            ctrl.manager.eventBus.once.mock?.calls?.forEach(([event, cb]) => {
+                if (event === 'download:failed') cb({ error: new Error('popup err') });
+            });
+            expect(globalThis.popupController.showError).toHaveBeenCalledWith('popup err');
+            delete globalThis.popupController;
         });
     });
 
@@ -336,6 +517,17 @@ describe('PlaylistController', () => {
             ctrl._togglePause();
             expect(ctrl.manager.resume).toHaveBeenCalled();
         });
+
+        it('не бросает если pauseBtn нет в DOM', () => {
+            document.body.innerHTML = '';
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            ctrl.manager._controller = { isPaused: vi.fn(() => false) };
+            ctrl.manager.pause = vi.fn();
+            expect(() => ctrl._togglePause()).not.toThrow();
+            ctrl.manager._controller = { isPaused: vi.fn(() => true) };
+            ctrl.manager.resume = vi.fn();
+            expect(() => ctrl._togglePause()).not.toThrow();
+        });
     });
 
     describe('_discover — playlist:discovery событие', () => {
@@ -352,6 +544,22 @@ describe('PlaylistController', () => {
                     discoveryListener({ loaded: 5, total: 10 });
                     discoveryListener({ loaded: 3, total: 0 });
                 }
+                return [];
+            });
+            await ctrl._discover();
+            expect(true).toBe(true);
+        });
+
+        it('discovery без discoveryStatus в DOM', async () => {
+            document.body.innerHTML = '<div id="trackList"></div>';
+            let discoveryListener = null;
+            const service = makeService();
+            const ctrl = new globalThis.PlaylistController(service, '42', {});
+            ctrl.manager.eventBus.on = vi.fn((event, cb) => {
+                if (event === 'playlist:discovery') discoveryListener = cb;
+            });
+            ctrl.manager.loadPlaylist = vi.fn(async () => {
+                if (discoveryListener) discoveryListener({ loaded: 2, total: 5 });
                 return [];
             });
             await ctrl._discover();

@@ -1,6 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '../../core/RateLimiter.js';
 
+describe('RateLimiter — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        delete globalThis.globalRateLimiter;
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/RateLimiter.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.RateLimiter).toBeDefined();
+        expect(globalThis.globalRateLimiter).toBeInstanceOf(globalThis.RateLimiter);
+    });
+});
+
 describe('RateLimiter', () => {
     let limiter;
 

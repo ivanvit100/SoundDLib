@@ -50,6 +50,16 @@ beforeAll(async () => {
     await import('../../ui/SingleTrackController.js');
 });
 
+describe('SingleTrackController — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../ui/SingleTrackController.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.SingleTrackController).toBeDefined();
+    });
+});
+
 function makeService(overrides = {}) {
     return {
         name: 'zvuk',

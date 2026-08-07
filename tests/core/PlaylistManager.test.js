@@ -2,6 +2,16 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 import '../../core/EventBus.js';
 
+describe('PlaylistManager — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/PlaylistManager.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.PlaylistManager).toBeDefined();
+    });
+});
+
 beforeAll(() => {
     globalThis.ConverterRegistry = {
         getMeta: vi.fn(() => ({ ext: 'mp3', mimeType: 'audio/mpeg' }))
@@ -115,6 +125,16 @@ describe('PlaylistManager', () => {
             expect(result.failed).toBe(0);
         });
 
+        it('использует Трек N если нет artist и title', async () => {
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = [{ id: '1', title: '', artist: '', streamUrl: 'https://cdn.example.com/audio.mp3' }];
+            const progressMessages = [];
+            mgr.eventBus.on('download:progress', (e) => progressMessages.push(e.message));
+            const result = await mgr.downloadAll(tracks, 'mp3', makeConverter(), makeService());
+            expect(result.done).toBe(1);
+            expect(progressMessages.some(m => m.includes('Трек 1'))).toBe(true);
+        });
+
         it('скачивает через CDN probe если нет streamUrl', async () => {
             const mgr = new globalThis.PlaylistManager();
             const tracks = makeTracks();
@@ -163,7 +183,7 @@ describe('PlaylistManager', () => {
             expect(globalThis.DownloadHistory.add).toHaveBeenCalled();
         });
 
-        it('onSeg callback key/init/segment в downloadAll (lines 57-61)', async () => {
+        it('onSeg callback key/init/segment в downloadAll', async () => {
             globalThis.getExtensionApi = () => makeApi();
             const service = {
                 fetchAllPlaylistTracks: vi.fn().mockResolvedValue(makeTracks()),
@@ -222,7 +242,7 @@ describe('PlaylistManager', () => {
             expect(mockWritable.close).toHaveBeenCalled();
         });
 
-        it('onSeg callback в downloadAllAsZip (lines 148-152)', async () => {
+        it('onSeg callback в downloadAllAsZip', async () => {
             globalThis.showSaveFilePicker = undefined;
             globalThis.getExtensionApi = () => makeApi();
             const service = {
@@ -243,7 +263,7 @@ describe('PlaylistManager', () => {
             expect(progressEvents.some(e => e.message?.includes('ключ'))).toBe(true);
         });
 
-        it('пишет pendingChunks в writable когда chunks не пусты (line 176)', async () => {
+        it('пишет pendingChunks в writable когда chunks не пусты', async () => {
             const testChunk = new Uint8Array([1, 2, 3]);
             const origFflate = globalThis.fflate;
             globalThis.fflate = {
@@ -274,7 +294,7 @@ describe('PlaylistManager', () => {
             expect(mockWritable.write).toHaveBeenCalled();
         });
 
-        it('считает failed треки в downloadAllAsZip (lines 180-181)', async () => {
+        it('считает failed треки в downloadAllAsZip', async () => {
             globalThis.showSaveFilePicker = undefined;
             globalThis.getExtensionApi = () => makeApi({ probe: { ok: false, error: 'CDN fail' } });
             const mgr = new globalThis.PlaylistManager();
@@ -300,6 +320,13 @@ describe('PlaylistManager', () => {
             await expect(mgr._fetchTrackBuffer(track, makeService(), api, null)).rejects.toThrow('stream error');
         });
 
+        it('бросает HTTP error если нет error поля', async () => {
+            const mgr = new globalThis.PlaylistManager();
+            const api = makeApi({ fetchAudio: { ok: false } });
+            const track = { id: '1', streamUrl: 'https://cdn.example.com/audio.mp3' };
+            await expect(mgr._fetchTrackBuffer(track, makeService(), api, null)).rejects.toThrow(/HTTP error/);
+        });
+
         it('загружает через CDN probe', async () => {
             const mgr = new globalThis.PlaylistManager();
             const api = makeApi();
@@ -314,6 +341,13 @@ describe('PlaylistManager', () => {
             const api = makeApi({ probe: { ok: false, error: 'probe failed' } });
             const track = { id: '3', streamUrl: null };
             await expect(mgr._fetchTrackBuffer(track, makeService(), api, null)).rejects.toThrow('probe failed');
+        });
+
+        it('бросает CDN probe failed если нет error поля', async () => {
+            const mgr = new globalThis.PlaylistManager();
+            const api = makeApi({ probe: { ok: false } });
+            const track = { id: '3', streamUrl: null };
+            await expect(mgr._fetchTrackBuffer(track, makeService(), api, null)).rejects.toThrow(/CDN probe failed/);
         });
 
         it('бросает если нет qualities', async () => {
@@ -352,7 +386,7 @@ describe('PlaylistManager', () => {
             expect(() => mgr.stop()).not.toThrow();
         });
 
-        it('waitIfPaused ожидает пока контроллер на паузе (line 251)', async () => {
+        it('waitIfPaused ожидает пока контроллер на паузе', async () => {
             vi.useFakeTimers();
             const mgr = new globalThis.PlaylistManager();
             mgr._controller = mgr._createController();

@@ -110,6 +110,18 @@ describe('BaseHlsDownloader', () => {
             expect(result.segments).toHaveLength(0);
         });
 
+        it('EXT-X-KEY без URI не задаёт keyUrl', () => {
+            const text = '#EXT-X-KEY:METHOD=AES-128\n#EXTINF:4.0,\nseg.ts';
+            const result = downloader._parseMediaPlaylist(text, 'https://base.com/');
+            expect(result.keyUrl).toBe('');
+        });
+
+        it('EXT-X-MAP без URI не задаёт initUrl', () => {
+            const text = '#EXT-X-MAP:BYTERANGE=512@0\n#EXTINF:4.0,\nseg.ts';
+            const result = downloader._parseMediaPlaylist(text, 'https://base.com/');
+            expect(result.initUrl).toBe('');
+        });
+
         it('парсит BANDWIDTH из BANDWIDTH= если нет AVERAGE-BANDWIDTH', () => {
             const text = [
                 '#EXTM3U',
@@ -200,7 +212,101 @@ describe('BaseHlsDownloader', () => {
             expect(() => base._resolveKey()).toThrow();
         });
 
-        it('успешно скачивает два сегмента (lines 59-86)', async () => {
+        it('первый сегмент: network error если нет status', async () => {
+            const m3u8 = [
+                '#EXTM3U',
+                '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key"',
+                '#EXT-X-MAP:URI="https://cdn.example.com/init.mp4"',
+                '#EXTINF:4.0,', 'https://cdn.example.com/seg001.ts'
+            ].join('\n');
+
+            class TestDownloaderFallback extends globalThis.BaseHlsDownloader {
+                async _fetchKeyMaterial() { return { data: new Array(16).fill(0) }; }
+                async _resolveKey() { return { cryptoKey: {}, firstSegDecrypted: new Uint8Array(16) }; }
+            }
+
+            mockApi.runtime.sendMessage.mockImplementation(async (msg) => {
+                if (msg.action === 'fetchWithRateLimit') return { ok: true, body: m3u8 };
+                if (msg.action === 'fetchBinary') return { ok: false };
+                return { ok: false };
+            });
+
+            await expect(new TestDownloaderFallback().download('https://cdn.example.com/quality.m3u8', mockApi, () => {}))
+                .rejects.toThrow(/network error/);
+        });
+
+        it('бросает если первый сегмент не загрузился', async () => {
+            const m3u8 = [
+                '#EXTM3U',
+                '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key"',
+                '#EXT-X-MAP:URI="https://cdn.example.com/init.mp4"',
+                '#EXTINF:4.0,', 'https://cdn.example.com/seg001.ts'
+            ].join('\n');
+
+            class TestDownloader extends globalThis.BaseHlsDownloader {
+                async _fetchKeyMaterial() { return { data: new Array(16).fill(0) }; }
+                async _resolveKey() { return { cryptoKey: {}, firstSegDecrypted: new Uint8Array(16) }; }
+            }
+
+            mockApi.runtime.sendMessage.mockImplementation(async (msg) => {
+                if (msg.action === 'fetchWithRateLimit') return { ok: true, body: m3u8 };
+                if (msg.action === 'fetchBinary') return { ok: false, status: 503 };
+                return { ok: false };
+            });
+
+            await expect(new TestDownloader().download('https://cdn.example.com/quality.m3u8', mockApi, () => {}))
+                .rejects.toThrow(/не загрузился/);
+        });
+
+        it('init-сегмент: network error если нет status', async () => {
+            const m3u8 = [
+                '#EXTM3U',
+                '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key"',
+                '#EXT-X-MAP:URI="https://cdn.example.com/init.mp4"',
+                '#EXTINF:4.0,', 'https://cdn.example.com/seg001.ts'
+            ].join('\n');
+
+            class TestDownloader3 extends globalThis.BaseHlsDownloader {
+                async _fetchKeyMaterial() { return { data: new Array(16).fill(0) }; }
+                async _resolveKey() { return { cryptoKey: {}, firstSegDecrypted: new Uint8Array(16) }; }
+            }
+
+            mockApi.runtime.sendMessage.mockImplementation(async (msg) => {
+                if (msg.action === 'fetchWithRateLimit') return { ok: true, body: m3u8 };
+                if (msg.action === 'fetchBinary' && msg.url.includes('seg001')) return { ok: true, data: new Array(32).fill(0) };
+                if (msg.action === 'fetchBinary' && msg.url.includes('init')) return { ok: false };
+                return { ok: false };
+            });
+
+            await expect(new TestDownloader3().download('https://cdn.example.com/quality.m3u8', mockApi, () => {}))
+                .rejects.toThrow(/network error/);
+        });
+
+        it('бросает если init-сегмент не загрузился', async () => {
+            const m3u8 = [
+                '#EXTM3U',
+                '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.com/key"',
+                '#EXT-X-MAP:URI="https://cdn.example.com/init.mp4"',
+                '#EXTINF:4.0,', 'https://cdn.example.com/seg001.ts'
+            ].join('\n');
+
+            class TestDownloader2 extends globalThis.BaseHlsDownloader {
+                async _fetchKeyMaterial() { return { data: new Array(16).fill(0) }; }
+                async _resolveKey() { return { cryptoKey: {}, firstSegDecrypted: new Uint8Array(16) }; }
+            }
+
+            mockApi.runtime.sendMessage.mockImplementation(async (msg) => {
+                if (msg.action === 'fetchWithRateLimit') return { ok: true, body: m3u8 };
+                if (msg.action === 'fetchBinary' && msg.url.includes('seg001')) return { ok: true, data: new Array(32).fill(0) };
+                if (msg.action === 'fetchBinary' && msg.url.includes('init')) return { ok: false, status: 404 };
+                return { ok: false };
+            });
+
+            await expect(new TestDownloader2().download('https://cdn.example.com/quality.m3u8', mockApi, () => {}))
+                .rejects.toThrow(/init-сегмент/);
+        });
+
+        it('успешно скачивает два сегмента', async () => {
             const rawKey = new Uint8Array(16).fill(1);
             const decKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-CBC' }, false, ['decrypt']);
             const decryptSpy = vi.spyOn(crypto.subtle, 'decrypt')
@@ -244,7 +350,7 @@ describe('BaseHlsDownloader', () => {
     });
 
     describe('_decryptBatch', () => {
-        it('загружает и расшифровывает сегменты (lines 29-36)', async () => {
+        it('загружает и расшифровывает сегменты', async () => {
             const decryptSpy = vi.spyOn(crypto.subtle, 'decrypt')
                 .mockResolvedValue(new Uint8Array(16).fill(3).buffer);
 
@@ -261,11 +367,18 @@ describe('BaseHlsDownloader', () => {
             }
         });
 
-        it('бросает если fetchBinary не OK (lines 31-35)', async () => {
+        it('бросает если fetchBinary не OK', async () => {
             mockApi.runtime.sendMessage.mockResolvedValue({ ok: false, status: 503 });
             await expect(downloader._decryptBatch(
                 ['https://cdn.example.com/seg001.ts'], mockApi, {}, new Uint8Array(16), 0, 1
             )).rejects.toThrow(/503/);
+        });
+
+        it('network error если нет status в fetchBinary', async () => {
+            mockApi.runtime.sendMessage.mockResolvedValue({ ok: false });
+            await expect(downloader._decryptBatch(
+                ['https://cdn.example.com/seg001.ts'], mockApi, {}, new Uint8Array(16), 0, 1
+            )).rejects.toThrow(/network error/);
         });
     });
 
@@ -298,6 +411,12 @@ describe('BaseHlsDownloader', () => {
             mockApi.runtime.sendMessage.mockResolvedValue({ ok: false, status: 403 });
             await expect(downloader._fetchPlaylist('https://cdn.com/quality.m3u8', mockApi))
                 .rejects.toThrow(/403/);
+        });
+
+        it('бросает с network error если нет status', async () => {
+            mockApi.runtime.sendMessage.mockResolvedValue({ ok: false });
+            await expect(downloader._fetchPlaylist('https://cdn.com/quality.m3u8', mockApi))
+                .rejects.toThrow(/network error/);
         });
 
         it('добавляет Referer если _referer возвращает непустую строку', async () => {

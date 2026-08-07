@@ -1,6 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import '../../../core/base/BaseInterceptor.js';
 
+describe('BaseInterceptor — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../../core/base/BaseInterceptor.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.BaseInterceptor).toBeDefined();
+    });
+});
+
 describe('BaseInterceptor', () => {
     it('BaseInterceptor класс существует', () => {
         expect(globalThis.BaseInterceptor).toBeDefined();

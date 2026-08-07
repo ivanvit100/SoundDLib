@@ -6,6 +6,16 @@ import '../../core/DownloadHistory.js';
 
 import '../../ui/HistoryController.js';
 
+describe('HistoryController — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../ui/HistoryController.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.HistoryController).toBeDefined();
+    });
+});
+
 describe('HistoryController', () => {
     beforeEach(() => {
         globalThis.DownloadHistory.clear();
@@ -129,6 +139,25 @@ describe('HistoryController', () => {
             delete globalThis.popupController;
         });
 
+        it('backBtn очищает logoInfo если он есть в DOM', () => {
+            const logoInfo = document.getElementById('logoInfo');
+            logoInfo.textContent = 'предыдущий текст';
+            globalThis.HistoryController.init();
+            document.getElementById('backBtn').click();
+            expect(document.getElementById('logoInfo').textContent).toBe('');
+        });
+
+        it('backBtn не падает без logoInfo в DOM', () => {
+            document.body.innerHTML = `
+                <div id="historyList"></div>
+                <div id="historyEmpty" style="display:none"></div>
+                <button id="clearHistoryBtn" style="display:none"></button>
+                <button id="backBtn"></button>
+            `;
+            globalThis.HistoryController.init();
+            expect(() => document.getElementById('backBtn').click()).not.toThrow();
+        });
+
         it('backBtn не бросает если нет popupController', () => {
             globalThis.popupController = undefined;
             globalThis.HistoryController.init();
@@ -141,6 +170,30 @@ describe('HistoryController', () => {
             document.body.innerHTML = '';
             globalThis.DownloadHistory.add({ service: 'zvuk', title: 'T', format: 'mp3' });
             expect(() => globalThis.HistoryController._render()).not.toThrow();
+        });
+
+        it('не бросает с пустой историей и без DOM элементов', () => {
+            document.body.innerHTML = '';
+            globalThis.DownloadHistory.clear();
+            expect(() => globalThis.HistoryController._render()).not.toThrow();
+        });
+    });
+
+    describe('_createCard edge cases', () => {
+        it('использует — если нет title', () => {
+            globalThis.DownloadHistory.clear();
+            globalThis.DownloadHistory.add({ service: 'zvuk', title: undefined, format: 'mp3' });
+            globalThis.HistoryController.init();
+            const titleEl = document.querySelector('.history-card-title');
+            expect(titleEl.textContent).toBe('—');
+        });
+
+        it('использует пустой badge если нет format', () => {
+            globalThis.DownloadHistory.clear();
+            globalThis.DownloadHistory.add({ service: 'zvuk', title: 'T', format: undefined });
+            globalThis.HistoryController.init();
+            const badge = document.querySelector('.history-badge');
+            expect(badge.textContent).toBe('');
         });
     });
 });

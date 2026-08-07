@@ -89,7 +89,7 @@ describe('ZvukMessageHandler', () => {
             expect(resp.ok).toBe(false);
         });
 
-        it('outer catch если serviceRegistry.getAllServices бросает (line 134)', async () => {
+        it('outer catch если serviceRegistry.getAllServices бросает', async () => {
             const origRegistry = globalThis.serviceRegistry;
             globalThis.serviceRegistry = {
                 getAllServices: vi.fn(() => { throw new Error('registry error'); })
@@ -167,7 +167,7 @@ describe('ZvukMessageHandler', () => {
             mockApi.scripting = origScripting;
         });
 
-        it('content-script sendMessage бросает — переходит к executeScript (line 39)', async () => {
+        it('content-script sendMessage бросает — переходит к executeScript', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
             mockApi.tabs.sendMessage = vi.fn(() => { throw new Error('cs failed'); });
@@ -183,7 +183,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('func: возвращает spy ключ из __sounddlib_key_store (lines 51-52)', async () => {
+        it('func: возвращает spy ключ из __sounddlib_key_store', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
             mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
@@ -211,7 +211,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('func: выполняет fetch и возвращает данные (lines 53-67)', async () => {
+        it('func: выполняет fetch и возвращает данные', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
             const origFetch = globalThis.fetch;
@@ -243,7 +243,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('func: возвращает ok:false если fetch не ok (line 63)', async () => {
+        it('func: возвращает ok:false если fetch не ok', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
             const origFetch = globalThis.fetch;
@@ -271,7 +271,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('func: обрабатывает ошибку fetch внутри (line 69)', async () => {
+        it('func: обрабатывает ошибку fetch внутри', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
             const origFetch = globalThis.fetch;
@@ -300,7 +300,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('tryExecuteScript бросает executeScript — fallback (line 79)', async () => {
+        it('tryExecuteScript бросает executeScript — fallback', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
             mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
@@ -316,7 +316,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('outer catch если tabs.query бросает (line 155)', async () => {
+        it('outer catch если tabs.query бросает', async () => {
             const origQuery = mockApi.tabs.query;
             mockApi.tabs.query = vi.fn(() => { throw new Error('query failed'); });
             try {
@@ -370,7 +370,7 @@ describe('ZvukMessageHandler', () => {
             expect(resp.ok).toBe(false);
         });
 
-        it('outer catch если serviceRegistry.getAllServices бросает (line 205)', async () => {
+        it('outer catch если serviceRegistry.getAllServices бросает', async () => {
             const origRegistry = globalThis.serviceRegistry;
             globalThis.serviceRegistry = {
                 getAllServices: vi.fn(() => { throw new Error('registry boom'); })

@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
+describe('SingleTrackManager — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../core/SingleTrackManager.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.SingleTrackManager).toBeDefined();
+    });
+});
+
 beforeAll(() => {
     globalThis.EventBus = globalThis.EventBus;
 
@@ -104,6 +114,14 @@ describe('SingleTrackManager', () => {
             expect(failEvents).toHaveLength(1);
         });
 
+        it('бросает Трек не найден если нет error поля', async () => {
+            globalThis.getExtensionApi = () => makeApi({
+                track: { ok: false }
+            });
+            const mgr = new globalThis.SingleTrackManager();
+            await expect(mgr.download('bad-id', 'mp3', null, makeConverter())).rejects.toThrow(/Трек не найден/);
+        });
+
         it('загружает аудио через url если нет data', async () => {
             globalThis.getExtensionApi = () => makeApi({
                 track: {
@@ -119,6 +137,43 @@ describe('SingleTrackManager', () => {
             });
             const mgr = new globalThis.SingleTrackManager();
             const result = await mgr.download('url-track', 'mp3', null, makeConverter());
+            expect(result.success).toBe(true);
+        });
+
+        it('использует resp.meta={} если meta null', async () => {
+            globalThis.getExtensionApi = () => makeApi({
+                track: {
+                    ok: true,
+                    trackId: 'null-meta',
+                    type: 'audio',
+                    mimeType: 'audio/mpeg',
+                    data: [1, 2, 3],
+                    url: null,
+                    masterUrl: null,
+                    meta: null
+                }
+            });
+            const mgr = new globalThis.SingleTrackManager();
+            const result = await mgr.download('null-meta', 'mp3', null, makeConverter());
+            expect(result.success).toBe(true);
+        });
+
+        it('использует resp.mimeType если fetchedMime пустой', async () => {
+            globalThis.getExtensionApi = () => makeApi({
+                track: {
+                    ok: true,
+                    trackId: 'no-mime',
+                    type: 'audio',
+                    mimeType: 'audio/mp4',
+                    data: null,
+                    url: 'https://cdn.example.com/audio.mp4',
+                    masterUrl: null,
+                    meta: { title: 'T' }
+                },
+                fetchAudio: { ok: true, data: [1, 2, 3], mimeType: undefined }
+            });
+            const mgr = new globalThis.SingleTrackManager();
+            const result = await mgr.download('no-mime', 'mp3', null, makeConverter());
             expect(result.success).toBe(true);
         });
 
@@ -191,7 +246,7 @@ describe('SingleTrackManager', () => {
             expect(result.success).toBe(true);
         });
 
-        it('progress callback для key, init, segment фаз (lines 34-40)', async () => {
+        it('progress callback для key, init, segment фаз', async () => {
             globalThis.serviceRegistry.getService = vi.fn(() => ({
                 getAudioData: vi.fn().mockImplementation(async (resp, opts, api, progressCb) => {
                     progressCb('key', 0, 0);
@@ -224,7 +279,7 @@ describe('SingleTrackManager', () => {
             }));
         });
 
-        it('converter progress callback вызывается (line 106)', async () => {
+        it('converter progress callback вызывается', async () => {
             globalThis.getExtensionApi = () => makeApi();
             const converterWithProgress = {
                 convert: vi.fn().mockImplementation(async (buf, mimeType, format, progressCb) => {
@@ -238,6 +293,72 @@ describe('SingleTrackManager', () => {
             const result = await mgr.download('track1', 'mp3', null, converterWithProgress);
             expect(result.success).toBe(true);
             expect(progressEvents.some(e => e.message === 'Конвертация...')).toBe(true);
+        });
+
+        it('progress callback с неизвестной фазой не падает', async () => {
+            globalThis.serviceRegistry.getService = vi.fn(() => ({
+                getAudioData: vi.fn().mockImplementation(async (resp, opts, api, progressCb) => {
+                    progressCb('unknown_phase', 0, 0);
+                    return { data: new ArrayBuffer(100), mimeType: 'audio/mp4' };
+                }),
+                fetchTrackMeta: vi.fn().mockResolvedValue({})
+            }));
+            globalThis.getExtensionApi = () => makeApi({
+                track: {
+                    ok: true, trackId: 'hls-unk', type: 'hls', mimeType: 'audio/mp4',
+                    masterUrl: 'https://cdn.zvuk.com/drm/track/888_2/master.m3u8',
+                    data: null, url: null, meta: {}
+                }
+            });
+            const mgr = new globalThis.SingleTrackManager();
+            const result = await mgr.download('hls-unk', 'mp3', null, makeConverter());
+            expect(result.success).toBe(true);
+            globalThis.serviceRegistry.getService = vi.fn((name) => ({
+                getAudioData: vi.fn().mockResolvedValue({ data: new ArrayBuffer(100), mimeType: 'audio/mp4' }),
+                fetchTrackMeta: vi.fn().mockResolvedValue({ title: 'T', artist: 'A', cover: 'https://img.com/c.jpg' })
+            }));
+        });
+
+        it('бросает если fetchAudioTrack не ok без error поля', async () => {
+            globalThis.getExtensionApi = () => makeApi({
+                track: {
+                    ok: true,
+                    trackId: 'fetch-fail2',
+                    type: 'audio',
+                    data: null,
+                    url: 'https://cdn.example.com/fail2',
+                    masterUrl: null,
+                    meta: {}
+                },
+                fetchAudio: { ok: false }
+            });
+            const mgr = new globalThis.SingleTrackManager();
+            await expect(mgr.download('fetch-fail2', 'mp3', null, makeConverter())).rejects.toThrow(/Не удалось загрузить/);
+        });
+
+        it('использует chrome если getExtensionApi не функция', async () => {
+            const mockChrome = makeApi();
+            const origGetApi = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = null;
+            globalThis.chrome = mockChrome;
+            const mgr = new globalThis.SingleTrackManager();
+            const result = await mgr.download('track1', 'mp3', null, makeConverter());
+            expect(result.success).toBe(true);
+            globalThis.getExtensionApi = origGetApi;
+            globalThis.chrome = undefined;
+        });
+
+        it('использует browser если нет getExtensionApi и chrome', async () => {
+            const mockBrowser = makeApi();
+            const origGetApi = globalThis.getExtensionApi;
+            globalThis.getExtensionApi = null;
+            globalThis.chrome = undefined;
+            globalThis.browser = mockBrowser;
+            const mgr = new globalThis.SingleTrackManager();
+            const result = await mgr.download('track1', 'mp3', null, makeConverter());
+            expect(result.success).toBe(true);
+            globalThis.getExtensionApi = origGetApi;
+            globalThis.browser = undefined;
         });
 
         it('бросает если сервис не найден в реестре', async () => {
@@ -285,6 +406,18 @@ describe('SingleTrackManager', () => {
             });
             expect(meta.cover).toBeTruthy();
         });
+
+        it('не обогащает если сервис не найден', async () => {
+            const origGetService = globalThis.serviceRegistry.getService;
+            globalThis.serviceRegistry.getService = vi.fn(() => null);
+            const mgr = new globalThis.SingleTrackManager();
+            const meta = { title: 'T' };
+            await mgr._enrichMeta(meta, {
+                masterUrl: 'https://cdn.zvuk.com/drm/track/999/master.m3u8'
+            });
+            expect(meta.cover).toBeUndefined();
+            globalThis.serviceRegistry.getService = origGetService;
+        });
     });
 
     describe('_buildFilename', () => {
@@ -310,7 +443,7 @@ describe('SingleTrackManager', () => {
     });
 
     describe('_saveFile', () => {
-        it('создаёт ссылку и кликает', () => {
+        it('создаёт ссылку, кликает и убирает через таймер', () => {
             const mgr = new globalThis.SingleTrackManager();
             vi.useFakeTimers();
             document.querySelectorAll('a[download]').forEach(a => a.remove());
@@ -320,6 +453,8 @@ describe('SingleTrackManager', () => {
             const link = links[links.length - 1];
             expect(link).toBeTruthy();
             expect(link.download).toBe('track.mp3');
+            vi.advanceTimersByTime(10001);
+            vi.clearAllTimers();
             vi.useRealTimers();
         });
     });

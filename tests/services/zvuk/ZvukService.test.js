@@ -63,6 +63,16 @@ beforeAll(async () => {
     await import('../../../services/zvuk/ZvukService.js');
 });
 
+describe('ZvukService — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukService.js');
+        vi.unstubAllGlobals();
+        expect(globalThis.ZvukService).toBeDefined();
+    });
+});
+
 describe('ZvukService', () => {
     let service;
 
@@ -515,6 +525,183 @@ describe('ZvukService', () => {
         it('возвращает null если нет данных', () => {
             const service2 = new globalThis.ZvukService();
             expect(service2._coverUrlRest({})).toBeNull();
+        });
+    });
+
+    describe('_normalizeTrackRest — fallback branches', () => {
+        it('a.name ?? a fallback когда name отсутствует', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = {
+                id: '1', title: 'T',
+                artists: [{ name: null }, 'Plain String'],
+                release: null, duration: 0
+            };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.artist).toContain('Plain String');
+        });
+
+        it('raw.artist ?? "" fallback когда нет artists', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', duration: 0 };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.artist).toBe('Unknown');
+        });
+
+        it('raw.title ?? raw.name ?? "Unknown" — только name', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', name: 'TrackName', artists: [], release: null, duration: 0 };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.title).toBe('TrackName');
+        });
+
+        it('raw.title ?? raw.name ?? "Unknown" — всё null', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: null, name: null, artists: [], release: null, duration: 0 };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.title).toBe('Unknown');
+        });
+
+        it('raw.album как fallback если нет release.title', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', release: null, album: 'MyAlbum', artists: [], duration: 0 };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.album).toBe('MyAlbum');
+        });
+
+        it('raw.duration ?? 0 fallback', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', artists: [], release: null };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.duration).toBe(0);
+        });
+
+        it('raw.stream_url как fallback для streamUrl', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', artists: [], release: null, duration: 0, stream_url: 'https://s.com/file.mp3' };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.streamUrl).toBe('https://s.com/file.mp3');
+        });
+
+        it('raw.audio как последний fallback для streamUrl', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', artists: [], release: null, duration: 0, audio: 'https://s.com/audio.aac' };
+            const track = service2._normalizeTrackRest(raw);
+            expect(track.streamUrl).toBe('https://s.com/audio.aac');
+        });
+    });
+
+    describe('_normalizeTrackGql — fallback branches', () => {
+        it('artists не массив → пустой artist; duration ?? 0 fallback', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', artists: null, release: null };
+            const track = service2._normalizeTrackGql(raw);
+            expect(track.artist).toBe('Unknown');
+            expect(track.duration).toBe(0);
+        });
+
+        it('raw.release?.title ?? "" fallback', () => {
+            const service2 = new globalThis.ZvukService();
+            const raw = { id: '1', title: 'T', artists: [], release: null, duration: 0 };
+            const track = service2._normalizeTrackGql(raw);
+            expect(track.album).toBe('');
+        });
+    });
+
+    describe('fetchTrackMeta — data.result ?? data fallback', () => {
+        it('использует data напрямую если нет result', async () => {
+            globalThis.getExtensionApi.mockReturnValue({
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({
+                        ok: true,
+                        body: JSON.stringify({
+                            id: '99', title: 'Direct Track',
+                            artists: [], release: null, duration: 0
+                        })
+                    })
+                }
+            });
+            const meta = await service.fetchTrackMeta('99');
+            expect(meta.title).toBe('Direct Track');
+        });
+    });
+
+    describe('fetchAllPlaylistTracks — null fallbacks', () => {
+        it('playlistTracks ?? [] когда поле отсутствует', async () => {
+            globalThis.getExtensionApi.mockReturnValue({
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({
+                        ok: true,
+                        body: JSON.stringify({ data: {} })
+                    })
+                }
+            });
+            const tracks = await service.fetchAllPlaylistTracks('42', null);
+            expect(tracks).toHaveLength(0);
+        });
+
+        it('onProgress=null не вызывается', async () => {
+            globalThis.getExtensionApi.mockReturnValue({
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({
+                        ok: true,
+                        body: JSON.stringify({ data: { playlistTracks: [] } })
+                    })
+                }
+            });
+            await expect(service.fetchAllPlaylistTracks('42', null)).resolves.toHaveLength(0);
+        });
+    });
+
+    describe('_fetchAllLikedTracks — onProgress и fallbacks', () => {
+        it('items ?? [] fallback когда нет items', async () => {
+            globalThis.getExtensionApi.mockReturnValue({
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({
+                        ok: true,
+                        body: JSON.stringify({
+                            data: { paginatedCollection: { tracks: { page: { endCursor: null } } } }
+                        })
+                    })
+                }
+            });
+            const tracks = await service.fetchAllPlaylistTracks('favorites', null);
+            expect(tracks).toHaveLength(0);
+        });
+
+        it('onProgress вызывается в _fetchAllLikedTracks', async () => {
+            globalThis.getExtensionApi.mockReturnValue({
+                runtime: {
+                    sendMessage: vi.fn().mockResolvedValue({
+                        ok: true,
+                        body: JSON.stringify({
+                            data: {
+                                paginatedCollection: {
+                                    tracks: {
+                                        items: [{ id: '1', title: 'T', artists: [], release: null, duration: 0 }],
+                                        page: { endCursor: null }
+                                    }
+                                }
+                            }
+                        })
+                    })
+                }
+            });
+            const onProgress = vi.fn();
+            const tracks = await service.fetchAllPlaylistTracks('favorites', onProgress);
+            expect(onProgress).toHaveBeenCalled();
+            expect(tracks).toHaveLength(1);
+        });
+    });
+
+    describe('m3u8 parser — BANDWIDTH fallback', () => {
+        it('использует "0" если нет ни AVERAGE-BANDWIDTH ни BANDWIDTH', () => {
+            const text = [
+                '#EXTM3U',
+                '#EXT-X-STREAM-INF:CODECS="mp4a.40.2"',
+                'https://cdn.example.com/stream.m3u8'
+            ].join('\n');
+            const qualities = globalThis.ZvukService.parseMasterPlaylist(text, 'https://cdn.example.com/');
+            expect(qualities[0].bandwidth).toBe(0);
         });
     });
 });
