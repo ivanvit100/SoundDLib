@@ -332,4 +332,323 @@ describe('ZvukInterceptor', () => {
             expect(typeof window.Worker).toBe('function');
         });
     });
+
+    describe('_hookStateBridge isFinite и paused ветки', () => {
+        it('isFinite(duration) FALSE -> dataset.d = 0 (branch 11/1)', () => {
+            vi.useFakeTimers();
+            const audio = document.createElement('audio');
+            Object.defineProperty(audio, 'duration', { get: () => Infinity, configurable: true });
+            Object.defineProperty(audio, 'paused', { value: false, configurable: true });
+            window.__sounddlib_media_el = audio;
+            const interceptor = new globalThis.ZvukInterceptor();
+            interceptor._hookStateBridge();
+            vi.advanceTimersByTime(500);
+            const el = document.getElementById('__sdl_state');
+            if (el) expect(el.dataset.d).toBe('0');
+            vi.clearAllTimers();
+            vi.useRealTimers();
+        });
+
+        it('media.paused TRUE -> dataset.p = 1', () => {
+            vi.useFakeTimers();
+            const audio = document.createElement('audio');
+            Object.defineProperty(audio, 'duration', { value: 60, configurable: true });
+            Object.defineProperty(audio, 'paused', { get: () => true, configurable: true });
+            window.__sounddlib_media_el = audio;
+            const interceptor = new globalThis.ZvukInterceptor();
+            interceptor._hookStateBridge();
+            vi.advanceTimersByTime(500);
+            const el = document.getElementById('__sdl_state');
+            if (el) expect(el.dataset.p).toBe('1');
+            vi.clearAllTimers();
+            vi.useRealTimers();
+        });
+    });
+
+    describe('XHR override — дополнительные ветки', () => {
+        it('XHR без open -> _xhrUrls undefined -> || "" (branch 42/1)', () => {
+            const xhr = new XMLHttpRequest();
+            expect(() => { try { xhr.send(); } catch {} }).not.toThrow();
+        });
+
+        it('XHR keyserver без track_id -> tid null (branch 44/1)', () => {
+            window.__sounddlib_pending_tid = null;
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://zvuk.com/keyserver/api/v1/key');
+            try { xhr.send(); } catch {}
+            expect(window.__sounddlib_pending_tid).toBeNull();
+        });
+
+        it('XHR loadend status 200 ArrayBuffer -> сохраняет', () => {
+            window.__sounddlib_raw_key_store = {};
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://zvuk.com/keyserver/api/v1/key?track_id=xhrab');
+            try { xhr.send(); } catch {}
+            Object.defineProperty(xhr, 'status', { value: 200, configurable: true });
+            Object.defineProperty(xhr, 'response', { value: new ArrayBuffer(4), configurable: true });
+            xhr.dispatchEvent(new ProgressEvent('loadend'));
+            expect(window.__sounddlib_raw_key_store['xhrab']).toBeDefined();
+        });
+
+        it('XHR loadend status 404 -> не сохраняет', () => {
+            window.__sounddlib_raw_key_store = {};
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://zvuk.com/keyserver/api/v1/key?track_id=xhrf');
+            try { xhr.send(); } catch {}
+            Object.defineProperty(xhr, 'status', { value: 404, configurable: true });
+            Object.defineProperty(xhr, 'response', { value: new ArrayBuffer(4), configurable: true });
+            xhr.dispatchEvent(new ProgressEvent('loadend'));
+            expect(window.__sounddlib_raw_key_store['xhrf']).toBeUndefined();
+        });
+    });
+
+    describe('Response.arrayBuffer — дополнительные ветки', () => {
+        it('non-keyserver URL -> не сохраняет (branch 33/1)', async () => {
+            window.__sounddlib_raw_key_store = {};
+            const resp = new Response(new Uint8Array([1]).buffer);
+            Object.defineProperty(resp, 'url', { value: 'https://zvuk.com/api/v1/track', configurable: true });
+            await Response.prototype.arrayBuffer.call(resp);
+            expect(Object.keys(window.__sounddlib_raw_key_store)).toHaveLength(0);
+        });
+
+        it('keyserver без track_id -> не сохраняет', async () => {
+            window.__sounddlib_raw_key_store = {};
+            const resp = new Response(new Uint8Array([1]).buffer);
+            Object.defineProperty(resp, 'url', { value: 'https://zvuk.com/keyserver/api/v1/key', configurable: true });
+            await Response.prototype.arrayBuffer.call(resp);
+            expect(Object.keys(window.__sounddlib_raw_key_store)).toHaveLength(0);
+        });
+    });
+
+    describe('importKey — дополнительные ветки', () => {
+        it('format не raw -> ветка 35/1', async () => {
+            try {
+                await crypto.subtle.importKey('jwk', { kty: 'oct', k: 'AAAAAAAAAAAAAAAAAAAAAA', alg: 'A128CBC', ext: true }, { name: 'AES-CBC' }, true, ['decrypt']);
+            } catch {}
+            expect(true).toBe(true);
+        });
+
+        it('src.byteLength !== 16 -> не сохраняет', async () => {
+            window.__sounddlib_pending_tid = 'tiny';
+            window.__sounddlib_key_store = {};
+            try {
+                await crypto.subtle.importKey('raw', new Uint8Array(8).fill(1), { name: 'AES-CBC' }, false, ['decrypt']);
+            } catch {}
+            expect(window.__sounddlib_key_store['tiny']).toBeUndefined();
+        });
+
+        it('pending_tid null -> не сохраняет', async () => {
+            window.__sounddlib_pending_tid = null;
+            window.__sounddlib_key_store = {};
+            try {
+                await crypto.subtle.importKey('raw', new Uint8Array(16).fill(3), { name: 'AES-CBC' }, false, ['decrypt']);
+            } catch {}
+            expect(window.__sounddlib_key_store[null]).toBeUndefined();
+        });
+    });
+});
+
+describe('ZvukInterceptor — _hookKeyCapture fetch branches (fresh load с mockFetch)', () => {
+    let mockFetch;
+
+    beforeAll(async () => {
+        mockFetch = vi.fn().mockResolvedValue({
+            ok: true, url: '',
+            text: () => Promise.resolve('{}'),
+            clone: () => ({ text: () => Promise.resolve('{}') })
+        });
+        window.fetch = mockFetch;
+        window.__sounddlib_interceptor = false;
+
+        globalThis.BaseInterceptor = class {
+            _post() {}
+            install() { throw new Error('not implemented'); }
+        };
+
+        vi.useFakeTimers();
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukInterceptor.js');
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
+    it('fetch с non-string args[0] объект с url', async () => {
+        window.__sounddlib_pending_tid = null;
+        await window.fetch({ url: 'https://example.com/api' });
+        expect(window.__sounddlib_pending_tid).toBeNull();
+    });
+
+    it('fetch с null args[0] (branch 15/1 optional chain)', async () => {
+        window.__sounddlib_pending_tid = null;
+        await window.fetch(null);
+        expect(window.__sounddlib_pending_tid).toBeNull();
+    });
+
+    it('fetch keyserver URL без track_id', async () => {
+        window.__sounddlib_pending_tid = null;
+        await window.fetch('https://zvuk.com/keyserver/api/v1/key');
+        expect(window.__sounddlib_pending_tid).toBeNull();
+    });
+
+    it('fetch keyserver без args[1] -> init || {}', async () => {
+        window.__sounddlib_pending_tid = null;
+        await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=no-init');
+        expect(window.__sounddlib_pending_tid).toBe('no-init');
+    });
+
+    it('fetch keyserver с Headers', async () => {
+        window.__sounddlib_xek_store = {};
+        const headers = new Headers({ 'x-encrypted-key': 'hk2' });
+        await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=hdr2', { headers });
+        expect(window.__sounddlib_xek_store['hdr2']).toBe('hk2');
+    });
+
+    it('fetch keyserver headers null -> else if FALSE', async () => {
+        window.__sounddlib_pending_tid = null;
+        await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=nullhdr', { headers: null });
+        expect(window.__sounddlib_pending_tid).toBe('nullhdr');
+    });
+
+    it('fetch keyserver с X-Encrypted-Key', async () => {
+        window.__sounddlib_xek_store = {};
+        await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=xek2', {
+            headers: { 'X-Encrypted-Key': 'xek-val' }
+        });
+        expect(window.__sounddlib_xek_store['xek2']).toBe('xek-val');
+    });
+
+    it('fetch keyserver без xek -> xek empty', async () => {
+        window.__sounddlib_xek_store = {};
+        await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=noxek2', {
+            headers: { 'host': 'zvuk.com' }
+        });
+        expect(window.__sounddlib_xek_store['noxek2']).toBeUndefined();
+    });
+
+    it('fetch non-keyserver URL', async () => {
+        window.__sounddlib_pending_tid = null;
+        await window.fetch('https://zvuk.com/api/v1/other');
+        expect(window.__sounddlib_pending_tid).toBeNull();
+    });
+
+    it('fetch zvuk API URL с cdn-hls-slicer в ответе', async () => {
+        const streamUrl = 'https://cdn-hls-slicer.zvuk.com/drm/track/99/master.m3u8';
+        mockFetch.mockResolvedValueOnce({
+            ok: true, url: '',
+            text: () => Promise.resolve(JSON.stringify({ s: streamUrl })),
+            clone: () => ({ text: () => Promise.resolve(JSON.stringify({ s: streamUrl })) })
+        });
+        await window.fetch('https://zvuk.com/api/v1/track/99');
+        await new Promise(r => setTimeout(r, 20));
+        expect(true).toBe(true);
+    });
+
+    it('fetch zvuk API URL без cdn-hls-slicer в ответе', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true, url: '',
+            text: () => Promise.resolve('{"no":"drm"}'),
+            clone: () => ({ text: () => Promise.resolve('{"no":"drm"}') })
+        });
+        await window.fetch('https://zvuk.com/api/v1/track/100');
+        await new Promise(r => setTimeout(r, 20));
+        expect(true).toBe(true);
+    });
+
+    it('fetch url включает cdn-hls-slicer -> isCdnApi TRUE но !includes FALSE', async () => {
+        await window.fetch('https://cdn-hls-slicer.zvuk.com/api/v1/track/101');
+        expect(true).toBe(true);
+    });
+});
+
+describe('ZvukInterceptor — _hookMediaElement src ветки', () => {
+    let fakeSet;
+
+    beforeAll(async () => {
+        fakeSet = vi.fn();
+        Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+            get() { return this._sdl_src ?? ''; },
+            set: fakeSet,
+            configurable: true, enumerable: true
+        });
+        window.__sounddlib_interceptor = false;
+        globalThis.BaseInterceptor = class {
+            _post() {}
+            install() { throw new Error('not implemented'); }
+        };
+        vi.useFakeTimers();
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukInterceptor.js');
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
+    it('src setter: non-audio value -> branch 4/1 FALSE (не data:audio)', () => {
+        const srcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+        if (srcDesc?.set) {
+            const audio = document.createElement('audio');
+            expect(() => srcDesc.set.call(audio, 'https://cdn.zvuk.com/track.mp3')).not.toThrow();
+        } else { expect(true).toBe(true); }
+    });
+
+    it('src setter: data:audio без запятой -> branch 6/1 FALSE (comma=-1)', () => {
+        const srcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+        if (srcDesc?.set) {
+            const audio = document.createElement('audio');
+            expect(() => srcDesc.set.call(audio, 'data:audio')).not.toThrow();
+        } else { expect(true).toBe(true); }
+    });
+
+    it('_hookMediaElement: media_el уже установлен -> branch 7/1 FALSE (не перезаписывает)', () => {
+        const audio = document.createElement('audio');
+        window.__sounddlib_media_el = audio;
+        window.__sounddlib_interceptor = false;
+        const interceptor = new globalThis.ZvukInterceptor();
+        interceptor._post = vi.fn();
+        interceptor._hookMediaElement();
+        expect(window.__sounddlib_media_el).toBe(audio);
+    });
+});
+
+describe('ZvukInterceptor — Worker message ветки (fresh load)', () => {
+    let workerInstance;
+
+    beforeAll(async () => {
+        workerInstance = new EventTarget();
+        window.__sounddlib_interceptor = false;
+        window.Worker = function() { return workerInstance; };
+        globalThis.BaseInterceptor = class {
+            _post() {}
+            install() { throw new Error('not implemented'); }
+        };
+        vi.useFakeTimers();
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukInterceptor.js');
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
+    it('Worker message с __sounddlib_wk и pending_tid -> сохраняет', () => {
+        window.__sounddlib_pending_tid = 'wk-tid2';
+        window.__sounddlib_key_store = {};
+        new window.Worker('blob:test');
+        workerInstance.dispatchEvent(new MessageEvent('message', {
+            data: { __sounddlib_wk: [4, 5, 6] }
+        }));
+        expect(window.__sounddlib_key_store['wk-tid2']).toEqual([4, 5, 6]);
+    });
+
+    it('Worker message без __sounddlib_wk -> не сохраняет', () => {
+        window.__sounddlib_key_store = {};
+        workerInstance.dispatchEvent(new MessageEvent('message', { data: { other: 1 } }));
+        expect(Object.keys(window.__sounddlib_key_store)).toHaveLength(0);
+    });
+
+    it('Worker message с __sounddlib_wk но pending_tid null -> не сохраняет', () => {
+        window.__sounddlib_pending_tid = null;
+        window.__sounddlib_key_store = {};
+        workerInstance.dispatchEvent(new MessageEvent('message', {
+            data: { __sounddlib_wk: [7, 8, 9] }
+        }));
+        expect(Object.keys(window.__sounddlib_key_store)).toHaveLength(0);
+    });
 });

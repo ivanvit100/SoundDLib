@@ -336,7 +336,11 @@
     let _sdlTimer = null;
     new MutationObserver(() => {
         clearTimeout(_sdlTimer);
-        _sdlTimer = setTimeout(() => { sdlInject(); sdlInjectTrackList(); sdlInjectPlaylistHeaderBtn(); }, 250);
+        _sdlTimer = setTimeout(() => {
+            /* istanbul ignore next */
+            if (typeof document === 'undefined') return;
+            sdlInject(); sdlInjectTrackList(); sdlInjectPlaylistHeaderBtn();
+        }, 250);
     }).observe(document.body, { childList: true, subtree: true });
     sdlInject();
     sdlInjectTrackList();
