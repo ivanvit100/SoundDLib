@@ -270,6 +270,26 @@ describe('PlaylistController', () => {
             document.getElementById('stopBtn').click();
             expect(ctrl.manager.stop).toHaveBeenCalled();
         });
+
+        it('downloadZipBtn вызывает _startDownload(true) (anonymous_26)', () => {
+            setupDom();
+            const ctrl = new globalThis.PlaylistController(makeService(), '42', {});
+            const spy = vi.spyOn(ctrl, '_startDownload').mockResolvedValue(undefined);
+            ctrl._bindEvents();
+            document.getElementById('downloadZipBtn').click();
+            expect(spy).toHaveBeenCalledWith(true);
+        });
+    });
+
+    describe('_discover — fetchPlaylistMeta reject (anonymous_8)', () => {
+        it('проглатывает ошибку fetchPlaylistMeta', async () => {
+            setupDom();
+            const svc = makeService({
+                fetchPlaylistMeta: vi.fn().mockRejectedValue(new Error('meta fail'))
+            });
+            const ctrl = new globalThis.PlaylistController(svc, '42', {});
+            await expect(ctrl._discover()).resolves.not.toThrow();
+        });
     });
 
     describe('_startDownload', () => {

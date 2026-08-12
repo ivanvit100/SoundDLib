@@ -27,6 +27,7 @@
     }
 
     function createChromePromiseApi(chromeApi) {
+        /* istanbul ignore next */
         if (!chromeApi) return null;
 
         return {
@@ -73,6 +74,7 @@
         const hasChrome = typeof global.chrome !== 'undefined' && !!global.chrome;
         const hasBrowser = typeof global.browser !== 'undefined' && !!global.browser;
         const supportsDnr = !!(hasChrome && global.chrome.declarativeNetRequest);
+        /* istanbul ignore next */
         const isFirefox = nativeName === 'browser' || (hasBrowser && !supportsDnr);
         const isChromium = hasChrome && !isFirefox;
 

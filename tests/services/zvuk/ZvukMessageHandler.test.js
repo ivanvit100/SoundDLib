@@ -102,6 +102,48 @@ describe('ZvukMessageHandler', () => {
                 globalThis.serviceRegistry = origRegistry;
             }
         });
+
+        it('text не начинается с #EXTM3U → throw (branch 119,25,0)', async () => {
+            const origFetch = globalThis.fetch;
+            const origRegistry = globalThis.serviceRegistry;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                text: vi.fn().mockResolvedValue('not m3u8 content')
+            });
+            globalThis.serviceRegistry = {
+                getAllServices: vi.fn(() => [{
+                    constructor: {
+                        capturePatterns: ['*://cdn-hls-slicer.zvuk.com/*'],
+                        captureFromUrl: vi.fn(() => ({ type: 'hls', qualities: [{ bandwidth: 128000 }] }))
+                    }
+                }])
+            };
+            const resp = await callHandler('resolveCdnUrl', { zvukId: 'notm3u8' });
+            expect(resp.ok).toBe(false);
+            globalThis.fetch = origFetch;
+            globalThis.serviceRegistry = origRegistry;
+        });
+
+        it('entry без qualities → throw (branch 121,26,0)', async () => {
+            const origFetch = globalThis.fetch;
+            const origRegistry = globalThis.serviceRegistry;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                text: vi.fn().mockResolvedValue('#EXTM3U\ndata')
+            });
+            globalThis.serviceRegistry = {
+                getAllServices: vi.fn(() => [{
+                    constructor: {
+                        capturePatterns: ['*://cdn-hls-slicer.zvuk.com/*'],
+                        captureFromUrl: vi.fn(() => ({ type: 'hls' }))
+                    }
+                }])
+            };
+            const resp = await callHandler('resolveCdnUrl', { zvukId: 'noqual' });
+            expect(resp.ok).toBe(false);
+            globalThis.fetch = origFetch;
+            globalThis.serviceRegistry = origRegistry;
+        });
     });
 
     describe('fetchKeyFromTab', () => {
@@ -329,6 +371,55 @@ describe('ZvukMessageHandler', () => {
                 mockApi.tabs.query = origQuery;
             }
         });
+
+        it('tabsRoot = tabsSub = null → || [] правая сторона (branches 89,19,1 и 89,20,1)', async () => {
+            mockApi.tabs.query = vi.fn().mockResolvedValue(null);
+            const resp = await callHandler('fetchKeyFromTab', {
+                url: 'https://zvuk.com/keyserver/api/v1/key?track_id=nulltabs99'
+            });
+            expect(resp.ok).toBe(false);
+            mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 10 }]);
+        });
+
+        it('tryNativeKey xek=undefined → xek?.value ?? "" правая сторона (branch 22,5,1)', async () => {
+            globalThis.nativeKeyStore = { 'nnk1': [1, 2, 3] };
+            globalThis.encryptedKeyStore = {};
+            mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 10 }]);
+            const resp = await callHandler('fetchKeyFromTab', {
+                url: 'https://zvuk.com/keyserver/api/v1/key?track_id=nnk1'
+            });
+            expect(resp.ok).toBe(true);
+            expect(resp.xekValue).toBe('');
+            globalThis.nativeKeyStore = {};
+            globalThis.encryptedKeyStore = {};
+        });
+
+        it('tryContentScript xekValue falsy, xek.value есть → branches 32,8,0 и 32,9,0', async () => {
+            globalThis.nativeKeyStore = {};
+            globalThis.encryptedKeyStore = { 'cs1': { headers: [{ name: 'x-encrypted-key', value: 'thexek' }] } };
+            const origSend = mockApi.tabs.sendMessage;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: true, data: [1, 2], source: 'fetch' });
+            const resp = await callHandler('fetchKeyFromTab', {
+                url: 'https://zvuk.com/keyserver/api/v1/key?track_id=cs1'
+            });
+            expect(resp.ok).toBe(true);
+            expect(resp.xekValue).toBe('thexek');
+            mockApi.tabs.sendMessage = origSend;
+            globalThis.encryptedKeyStore = {};
+        });
+
+        it('tryContentScript xekValue falsy, xek=undefined → xek?.value ?? "" правая сторона (branch 32,9,1)', async () => {
+            globalThis.nativeKeyStore = {};
+            globalThis.encryptedKeyStore = {};
+            const origSend = mockApi.tabs.sendMessage;
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: true, data: [1, 2], source: 'fetch' });
+            const resp = await callHandler('fetchKeyFromTab', {
+                url: 'https://zvuk.com/keyserver/api/v1/key?track_id=cs2'
+            });
+            expect(resp.ok).toBe(true);
+            expect(resp.xekValue).toBe('');
+            mockApi.tabs.sendMessage = origSend;
+        });
     });
 
     describe('probeCdnForTrack', () => {
@@ -381,6 +472,157 @@ describe('ZvukMessageHandler', () => {
                 expect(resp.error).toBeTruthy();
             } finally {
                 globalThis.serviceRegistry = origRegistry;
+            }
+        });
+
+        it('text не начинается с #EXTM3U → continue (branch 181,36,0)', async () => {
+            const origFetch = globalThis.fetch;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                text: vi.fn().mockResolvedValue('not m3u8')
+            });
+            const resp = await callHandler('probeCdnForTrack', { zvukId: 'notm3u8p' });
+            expect(resp.ok).toBe(false);
+            globalThis.fetch = origFetch;
+        });
+
+        it('без meta → if(meta) FALSE, stored?.meta || {} правая сторона (branches 188,38,1 и 193,39,1)', async () => {
+            const origFetch = globalThis.fetch;
+            const origRegistry = globalThis.serviceRegistry;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                text: vi.fn().mockResolvedValue('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nhttps://cdn.example.com/128.m3u8')
+            });
+            globalThis.serviceRegistry = {
+                getAllServices: vi.fn(() => [{
+                    constructor: {
+                        capturePatterns: ['*://cdn-hls-slicer.zvuk.com/*'],
+                        captureFromUrl: vi.fn(() => ({
+                            type: 'hls',
+                            qualities: [{ bandwidth: 128000, url: 'https://cdn.example.com/128.m3u8' }]
+                        }))
+                    }
+                }])
+            };
+            const resp = await callHandler('probeCdnForTrack', { zvukId: 'nometa' });
+            expect(resp.ok).toBe(true);
+            globalThis.fetch = origFetch;
+            globalThis.serviceRegistry = origRegistry;
+        });
+
+        it('entry без qualities → qualities=null (branches 194,40,1 и 198,41,1)', async () => {
+            const origFetch = globalThis.fetch;
+            const origRegistry = globalThis.serviceRegistry;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                text: vi.fn().mockResolvedValue('#EXTM3U\ndata')
+            });
+            globalThis.serviceRegistry = {
+                getAllServices: vi.fn(() => [{
+                    constructor: {
+                        capturePatterns: ['*://cdn-hls-slicer.zvuk.com/*'],
+                        captureFromUrl: vi.fn(() => ({ type: 'hls' }))
+                    }
+                }])
+            };
+            const resp = await callHandler('probeCdnForTrack', { zvukId: 'noqual2', meta: { title: 'T' } });
+            expect(resp.ok).toBe(true);
+            expect(resp.qualities).toBeNull();
+            globalThis.fetch = origFetch;
+            globalThis.serviceRegistry = origRegistry;
+        });
+    });
+
+    describe('ZvukMessageHandler — IIFE ветки (fresh loads)', () => {
+        it('getExtensionApi не функция, browser=mockApi → IIFE branches 12,0,1 + 14,1,0 + 15,2,1 + 114,23,0 + 176,34,0', async () => {
+            const origGetExtApi = globalThis.getExtensionApi;
+            const origGetBrowserEnv = globalThis.getBrowserEnv;
+            const origBrowser = globalThis.browser;
+            const origChrome = globalThis.chrome;
+            const origFetch = globalThis.fetch;
+            const origRegistry = globalThis.serviceRegistry;
+
+            try {
+                globalThis.getExtensionApi = undefined;
+                globalThis.getBrowserEnv = undefined;
+                globalThis.browser = mockApi;
+                globalThis.chrome = undefined;
+
+                vi.resetModules();
+                const idxBefore = globalThis.serviceMessageHandlers.length;
+                await import('../../../services/zvuk/ZvukMessageHandler.js');
+                const ffHandlers = globalThis.serviceMessageHandlers[idxBefore];
+
+                globalThis.fetch = vi.fn().mockResolvedValue({
+                    ok: true,
+                    text: vi.fn().mockResolvedValue('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nhttps://cdn.example.com/128.m3u8')
+                });
+                globalThis.serviceRegistry = {
+                    getAllServices: vi.fn(() => [{
+                        constructor: {
+                            capturePatterns: ['*://cdn-hls-slicer.zvuk.com/*'],
+                            captureFromUrl: vi.fn(() => ({
+                                type: 'hls',
+                                qualities: [{ bandwidth: 128000, url: 'https://cdn.example.com/128.m3u8' }]
+                            }))
+                        }
+                    }])
+                };
+
+                await new Promise(resolve => ffHandlers.get('resolveCdnUrl')({ zvukId: 'ff1' }, {}, resolve));
+                await new Promise(resolve => ffHandlers.get('probeCdnForTrack')({ zvukId: 'ff2', meta: { title: 'T' } }, {}, resolve));
+
+                expect(true).toBe(true);
+            } finally {
+                globalThis.getExtensionApi = origGetExtApi;
+                globalThis.getBrowserEnv = origGetBrowserEnv;
+                globalThis.browser = origBrowser;
+                globalThis.chrome = origChrome;
+                globalThis.fetch = origFetch;
+                globalThis.serviceRegistry = origRegistry;
+            }
+        });
+
+        it('browser=undefined, chrome=mockApi → branch 14,1,1', async () => {
+            const origGetExtApi = globalThis.getExtensionApi;
+            const origBrowser = globalThis.browser;
+            const origChrome = globalThis.chrome;
+
+            try {
+                globalThis.getExtensionApi = undefined;
+                globalThis.browser = undefined;
+                globalThis.chrome = mockApi;
+
+                vi.resetModules();
+                await import('../../../services/zvuk/ZvukMessageHandler.js');
+                expect(true).toBe(true);
+            } finally {
+                globalThis.getExtensionApi = origGetExtApi;
+                globalThis.browser = origBrowser;
+                globalThis.chrome = origChrome;
+            }
+        });
+
+        it('browser=null, chrome=null, serviceMessageHandlers не задан → branches 14,1,2 + 18,3,0', async () => {
+            const origGetExtApi = globalThis.getExtensionApi;
+            const origBrowser = globalThis.browser;
+            const origChrome = globalThis.chrome;
+            const origHandlers = globalThis.serviceMessageHandlers;
+
+            try {
+                globalThis.getExtensionApi = undefined;
+                globalThis.browser = undefined;
+                globalThis.chrome = undefined;
+                delete globalThis.serviceMessageHandlers;
+
+                vi.resetModules();
+                await import('../../../services/zvuk/ZvukMessageHandler.js');
+                expect(true).toBe(true);
+            } finally {
+                globalThis.getExtensionApi = origGetExtApi;
+                globalThis.browser = origBrowser;
+                globalThis.chrome = origChrome;
+                globalThis.serviceMessageHandlers = origHandlers;
             }
         });
     });

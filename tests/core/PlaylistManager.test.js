@@ -424,6 +424,76 @@ describe('PlaylistManager', () => {
             expect(() => mgr._saveFile(blob, 'playlist.zip')).not.toThrow();
             vi.useRealTimers();
         });
+
+        it('setTimeout callback выполняется (anonymous_27)', () => {
+            const mgr = new globalThis.PlaylistManager();
+            vi.useFakeTimers();
+            const blob = new Blob(['test'], { type: 'application/zip' });
+            mgr._saveFile(blob, 'test.zip');
+            expect(() => vi.advanceTimersByTime(11000)).not.toThrow();
+            vi.useRealTimers();
+        });
+    });
+
+    describe('downloadAll — onProgress callback (anonymous_6)', () => {
+        it('converter вызывает onProgress callback', async () => {
+            globalThis.getExtensionApi = () => makeApi();
+            const converterWithProgress = {
+                convert: vi.fn().mockImplementation(async (buf, mime, fmt, onProgress) => {
+                    if (onProgress) onProgress(50);
+                    return new ArrayBuffer(10);
+                })
+            };
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = makeTracks(1);
+            tracks[0].streamUrl = 'https://cdn.example.com/audio.mp3';
+            const result = await mgr.downloadAll(tracks, 'mp3', converterWithProgress, makeService());
+            expect(result.done).toBe(1);
+        });
+    });
+
+    describe('downloadAllAsZip — onProgress callback (anonymous_10)', () => {
+        it('converter вызывает onProgress callback в zip', async () => {
+            globalThis.getExtensionApi = () => makeApi();
+            globalThis.showSaveFilePicker = undefined;
+            const converterWithProgress = {
+                convert: vi.fn().mockImplementation(async (buf, mime, fmt, onProgress) => {
+                    if (onProgress) onProgress(75);
+                    return new ArrayBuffer(10);
+                })
+            };
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = makeTracks(1);
+            tracks[0].streamUrl = 'https://cdn.example.com/audio.mp3';
+            const result = await mgr.downloadAllAsZip(tracks, 'mp3', converterWithProgress, 'PL', makeService());
+            expect(result.done).toBe(1);
+        });
+    });
+
+    describe('_fetchTrackBuffer — sort comparator (anonymous_12) и onSegment null fallback (anonymous_13)', () => {
+        it('sort comparator вызывается при 2+ qualities, onSegment=null → fallback () => {}', async () => {
+            const mgr = new globalThis.PlaylistManager();
+            const api = makeApi({
+                probe: {
+                    ok: true,
+                    masterUrl: 'https://cdn.example.com/master.m3u8',
+                    qualities: [
+                        { bandwidth: 128000, url: 'https://cdn.example.com/lo.m3u8' },
+                        { bandwidth: 320000, url: 'https://cdn.example.com/hi.m3u8' }
+                    ]
+                }
+            });
+            const service = {
+                fetchAllPlaylistTracks: vi.fn().mockResolvedValue([]),
+                getAudioData: vi.fn().mockImplementation(async (resp, opts, a, onSeg) => {
+                    if (onSeg) onSeg('segment', 1, 1);
+                    return { data: new ArrayBuffer(10), mimeType: 'audio/mp4' };
+                })
+            };
+            const track = { id: '1', streamUrl: null };
+            const result = await mgr._fetchTrackBuffer(track, service, api, null);
+            expect(result.buffer).toBeDefined();
+        });
     });
 
     describe('downloadAll — chrome fallback если getExtensionApi не функция', () => {

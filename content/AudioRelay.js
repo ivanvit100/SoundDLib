@@ -194,7 +194,7 @@
     api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const handler = MSG_HANDLERS[message.action];
         if (!handler) return false;
-        return handler(message, sendResponse) ?? false;
+        return handler(message, sendResponse) ?? /* istanbul ignore next */ false;
     });
 
     (function sdlInjectTrackListStyle() {

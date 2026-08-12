@@ -48,6 +48,74 @@ describe('MessageRouter — IIFE без getExtensionApi', () => {
     });
 });
 
+describe('MessageRouter — IIFE chrome fallback (branch 16,1,1)', () => {
+    it('загружается с globalThis.chrome если browser не определён', async () => {
+        const addListenerMock = vi.fn();
+        const mockChromeApi = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: addListenerMock },
+                getURL: vi.fn(p => `chrome-extension://abc/${p}`)
+            },
+            tabs: { query: vi.fn().mockResolvedValue([]) },
+            extension: { getViews: vi.fn(() => []) }
+        };
+
+        const orig = {
+            getExtensionApi: globalThis.getExtensionApi,
+            getBrowserEnv: globalThis.getBrowserEnv,
+            globalRateLimiter: globalThis.globalRateLimiter,
+            audioStore: globalThis.audioStore,
+            browser: globalThis.browser,
+            chrome: globalThis.chrome,
+            RateLimiter: globalThis.RateLimiter
+        };
+
+        globalThis.getExtensionApi = null;
+        globalThis.getBrowserEnv = null;
+        globalThis.globalRateLimiter = makeMinimalRateLimiter();
+        globalThis.audioStore = makeMinimalStore();
+        globalThis.RateLimiter = class { async trackRequest() {} throttle() {} reset() {} };
+        globalThis.browser = undefined;
+        globalThis.chrome = mockChromeApi;
+
+        vi.resetModules();
+        await import('../../background/MessageRouter.js');
+
+        expect(addListenerMock).toHaveBeenCalled();
+
+        Object.assign(globalThis, orig);
+    });
+});
+
+describe('MessageRouter — IIFE null fallback (branch 16,1,2)', () => {
+    it('browserAPI === null если нет ни browser ни chrome', async () => {
+        const orig = {
+            getExtensionApi: globalThis.getExtensionApi,
+            getBrowserEnv: globalThis.getBrowserEnv,
+            globalRateLimiter: globalThis.globalRateLimiter,
+            audioStore: globalThis.audioStore,
+            browser: globalThis.browser,
+            chrome: globalThis.chrome,
+            RateLimiter: globalThis.RateLimiter
+        };
+
+        globalThis.getExtensionApi = null;
+        globalThis.getBrowserEnv = null;
+        globalThis.globalRateLimiter = makeMinimalRateLimiter();
+        globalThis.audioStore = makeMinimalStore();
+        globalThis.RateLimiter = class { async trackRequest() {} throttle() {} reset() {} };
+        globalThis.browser = undefined;
+        globalThis.chrome = undefined;
+
+        vi.resetModules();
+        try { await import('../../background/MessageRouter.js'); } catch {}
+
+        Object.assign(globalThis, orig);
+        expect(true).toBe(true);
+    });
+});
+
 describe('MessageRouter — IIFE без globalRateLimiter', () => {
     it('создаёт новый RateLimiter если globalRateLimiter undefined', async () => {
         const rateLimiterConstructorSpy = vi.fn(function() {

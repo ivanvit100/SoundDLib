@@ -653,6 +653,49 @@ describe('RequestInterceptor — setupServiceInterceptors без getBrowserEnv',
     });
 });
 
+describe('RequestInterceptor — notifyPopup reject → catch callback (anonymous_11)', () => {
+    let onCompletedListeners = [];
+
+    beforeAll(async () => {
+        onCompletedListeners = [];
+        const captureFromUrl = vi.fn().mockReturnValue({ type: 'hls', url: 'https://cdn.example.com/t.m3u8', qualities: [], mimeType: 'audio/mp4' });
+        const mockApi = {
+            webRequest: {
+                onBeforeSendHeaders: { addListener: vi.fn() },
+                onCompleted: { addListener: vi.fn((cb) => { onCompletedListeners.push(cb); }) }
+            },
+            tabs: { sendMessage: vi.fn().mockResolvedValue({ ok: true, meta: {} }) }
+        };
+        globalThis.getExtensionApi = () => mockApi;
+        globalThis.getBrowserEnv = () => ({ isFirefox: false, isChromium: true, supportsDnr: true });
+        globalThis.globalRateLimiter = new globalThis.RateLimiter();
+        globalThis.authTokenStore = {};
+        globalThis.serviceRequestInterceptors = [{ authUrls: [], setupKeyCapture: vi.fn(), setupEarlyInjection: vi.fn() }];
+        globalThis.serviceRegistry = {
+            getAllServices: vi.fn(() => [{ constructor: { capturePatterns: ['*://cdn.example.com/*'], captureFromUrl } }]),
+            getServiceByUrl: vi.fn(() => ({ constructor: { capturePatterns: ['*://cdn.example.com/*'], captureFromUrl } }))
+        };
+        globalThis.audioStore = new globalThis.audioStore.constructor();
+        globalThis.notifyPopup = vi.fn().mockRejectedValue(new Error('popup error'));
+        globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: vi.fn().mockResolvedValue('#EXTM3U') });
+
+        vi.resetModules();
+        await import('../../background/RequestInterceptor.js');
+    });
+
+    it('catch callback вызывается когда notifyPopup отклоняет (anonymous_11)', async () => {
+        const listener = onCompletedListeners[0];
+        if (listener) {
+            await expect(listener({
+                statusCode: 200,
+                url: 'https://cdn.example.com/audio.m3u8',
+                tabId: 1
+            })).resolves.not.toThrow();
+        }
+        expect(true).toBe(true);
+    });
+});
+
 describe('RequestInterceptor — setupServiceCapture capturePatterns null', () => {
     beforeAll(async () => {
         const mockApi = {

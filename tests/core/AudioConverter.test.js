@@ -280,5 +280,18 @@ describe('AudioConverter', () => {
             const unlinkCalls = mockFFmpeg.FS.mock.calls.filter(c => c[0] === 'unlink');
             expect(unlinkCalls.length).toBeGreaterThanOrEqual(2);
         });
+
+        it('вызывает onProgress callback через setProgress (anonymous_7 и anonymous_8)', async () => {
+            mockFFmpeg.isLoaded.mockReturnValue(true);
+            mockFFmpeg.FS.mockImplementation((op) => {
+                if (op === 'readFile') return new Uint8Array(100);
+            });
+            mockFFmpeg.setProgress.mockImplementation(cb => { if (cb) cb({ ratio: 0.5 }); });
+            const buf = new ArrayBuffer(5000);
+            const onProgress = vi.fn();
+            await converter.convert(buf, 'audio/mpeg', 'mp3', onProgress);
+            mockFFmpeg.setProgress.mockImplementation(vi.fn());
+            expect(onProgress).toHaveBeenCalledWith(50);
+        });
     });
 });

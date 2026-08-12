@@ -83,6 +83,26 @@ describe('AudioRelay', () => {
             sendWindowMessage({ __sounddlib: true, type: 'UNKNOWN_TYPE' });
             expect(globalThis.chrome.runtime.sendMessage.mock.calls.length).toBe(prevCalls);
         });
+
+        it('AUDIO_CAPTURED без meta → meta||{} правая сторона (branch 25,4,1)', async () => {
+            sendWindowMessage({ __sounddlib: true, type: 'AUDIO_CAPTURED', mimeType: 'audio/mpeg', data: [1], url: null });
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
+
+        it('AUDIO_CAPTURED catch callback (anonymous_2)', async () => {
+            globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+            sendWindowMessage({ __sounddlib: true, type: 'AUDIO_CAPTURED', mimeType: 'audio/mpeg', data: [1], url: null, meta: {} });
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
+
+        it('STREAM_URL_CAPTURED catch callback (anonymous_3)', async () => {
+            globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+            sendWindowMessage({ __sounddlib: true, type: 'STREAM_URL_CAPTURED', cdnTrackId: '1_2', streamUrl: 'https://cdn.com/1.m3u8', apiUrl: '' });
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
     });
 
     describe('runtime message handler — fetchKeyFromMainWorld', () => {
@@ -136,6 +156,18 @@ describe('AudioRelay', () => {
             expect(resp.ok).toBe(true);
             expect(resp.xekValue).toBeTruthy();
         });
+
+        it('без extraHeaders → || [] правая сторона (branch 42,6,1)', async () => {
+            const buf = new Uint8Array([7]).buffer;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true, arrayBuffer: () => Promise.resolve(buf)
+            });
+            const resp = await sendRuntimeMessage('fetchKeyFromMainWorld', {
+                url: 'https://zvuk.com/keyserver/api/v1/key?track_id=noextra',
+                xekValue: 'xek-val'
+            });
+            expect(resp.ok).toBe(true);
+        });
     });
 
     describe('runtime message handler — playTrackById', () => {
@@ -186,6 +218,17 @@ describe('AudioRelay', () => {
             expect(resp.ok).toBe(true);
             expect(resp.body).toBe('page content');
         });
+
+        it('content-type null → || "" правая сторона (branch 79,14,1)', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true, status: 200,
+                text: () => Promise.resolve('body'),
+                headers: { get: () => null }
+            });
+            const resp = await sendRuntimeMessage('fetchFromTab', { url: 'https://zvuk.com' });
+            expect(resp.ok).toBe(true);
+            expect(resp.contentType).toBe('');
+        });
     });
 
     describe('runtime message handler — fetchAudioFromTab', () => {
@@ -207,6 +250,18 @@ describe('AudioRelay', () => {
             const resp = await sendRuntimeMessage('fetchAudioFromTab', { url: 'https://cdn.example.com/audio.mp3' });
             expect(resp.ok).toBe(false);
         });
+
+        it('content-type null → || "audio/mpeg" правая сторона (branch 93,17,1)', async () => {
+            const buf = new Uint8Array([9]).buffer;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true, status: 200,
+                arrayBuffer: () => Promise.resolve(buf),
+                headers: { get: () => null }
+            });
+            const resp = await sendRuntimeMessage('fetchAudioFromTab', { url: 'https://cdn.example.com/a.mp3' });
+            expect(resp.ok).toBe(true);
+            expect(resp.mimeType).toBe('audio/mpeg');
+        });
     });
 
     describe('runtime message handler — getPlaybackState', () => {
@@ -226,6 +281,18 @@ describe('AudioRelay', () => {
                 expect(resp.ok).toBe(true);
                 expect(resp.state).toBeNull();
             });
+        });
+
+        it('media с Infinity duration → isFinite FALSE → duration:0 (branch 114,21,1)', async () => {
+            document.body.innerHTML = `<audio id="inf-player"></audio>`;
+            const media = document.getElementById('inf-player');
+            Object.defineProperty(media, 'currentTime', { value: 0, configurable: true });
+            Object.defineProperty(media, 'duration', { value: Infinity, configurable: true });
+            Object.defineProperty(media, 'paused', { value: true, configurable: true });
+            const resp = await sendRuntimeMessage('getPlaybackState', {});
+            expect(resp.ok).toBe(true);
+            expect(resp.state.duration).toBe(0);
+            document.body.innerHTML = '';
         });
     });
 

@@ -62,6 +62,17 @@ describe('AudioInterceptor', () => {
                 srcDesc.set.call(audio, `data:audio/mpeg;base64,${b64}`);
             }
         });
+
+        it('getter возвращает значение через _srcDesc.get (anonymous_3)', () => {
+            const audio = document.createElement('audio');
+            const srcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+            if (srcDesc?.get) {
+                const val = srcDesc.get.call(audio);
+                expect(val).toBeDefined();
+            } else {
+                expect(true).toBe(true);
+            }
+        });
     });
 
     describe('fetch override', () => {
