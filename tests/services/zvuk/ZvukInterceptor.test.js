@@ -334,7 +334,7 @@ describe('ZvukInterceptor', () => {
     });
 
     describe('_hookStateBridge isFinite и paused ветки', () => {
-        it('isFinite(duration) FALSE -> dataset.d = 0 (branch 11/1)', () => {
+        it('isFinite(duration) FALSE -> dataset.d = 0', () => {
             vi.useFakeTimers();
             const audio = document.createElement('audio');
             Object.defineProperty(audio, 'duration', { get: () => Infinity, configurable: true });
@@ -366,12 +366,12 @@ describe('ZvukInterceptor', () => {
     });
 
     describe('XHR override — дополнительные ветки', () => {
-        it('XHR без open -> _xhrUrls undefined -> || "" (branch 42/1)', () => {
+        it('XHR без open -> _xhrUrls undefined -> || ""', () => {
             const xhr = new XMLHttpRequest();
             expect(() => { try { xhr.send(); } catch {} }).not.toThrow();
         });
 
-        it('XHR keyserver без track_id -> tid null (branch 44/1)', () => {
+        it('XHR keyserver без track_id -> tid null', () => {
             window.__sounddlib_pending_tid = null;
             const xhr = new XMLHttpRequest();
             xhr.open('GET', 'https://zvuk.com/keyserver/api/v1/key');
@@ -403,7 +403,7 @@ describe('ZvukInterceptor', () => {
     });
 
     describe('Response.arrayBuffer — дополнительные ветки', () => {
-        it('non-keyserver URL -> не сохраняет (branch 33/1)', async () => {
+        it('non-keyserver URL -> не сохраняет', async () => {
             window.__sounddlib_raw_key_store = {};
             const resp = new Response(new Uint8Array([1]).buffer);
             Object.defineProperty(resp, 'url', { value: 'https://zvuk.com/api/v1/track', configurable: true });
@@ -478,7 +478,7 @@ describe('ZvukInterceptor — _hookKeyCapture fetch branches (fresh load с mock
         expect(window.__sounddlib_pending_tid).toBeNull();
     });
 
-    it('fetch с null args[0] (branch 15/1 optional chain)', async () => {
+    it('fetch с null args[0]', async () => {
         window.__sounddlib_pending_tid = null;
         await window.fetch(null);
         expect(window.__sounddlib_pending_tid).toBeNull();
@@ -559,7 +559,7 @@ describe('ZvukInterceptor — _hookKeyCapture fetch branches (fresh load с mock
         expect(true).toBe(true);
     });
 
-    it('xek_store null -> || {} right side (branch 111,24,1)', async () => {
+    it('xek_store null -> || {} right side', async () => {
         window.__sounddlib_xek_store = null;
         await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=nullst', {
             headers: { 'x-encrypted-key': 'xek-null' }
@@ -567,7 +567,7 @@ describe('ZvukInterceptor — _hookKeyCapture fetch branches (fresh load с mock
         expect(window.__sounddlib_xek_store).toBeDefined();
     });
 
-    it('scan с числовым значением в JSON -> else if FALSE (branch 127,30,1)', async () => {
+    it('scan с числовым значением в JSON -> else if FALSE', async () => {
         const streamUrl = 'https://cdn-hls-slicer.zvuk.com/drm/track/7/m.m3u8';
         mockFetch.mockResolvedValueOnce({
             ok: true, url: '',
@@ -581,7 +581,7 @@ describe('ZvukInterceptor — _hookKeyCapture fetch branches (fresh load с mock
         expect(true).toBe(true);
     });
 
-    it('stream URL без ID после /track/ -> if (m) FALSE (branch 133,32,1)', async () => {
+    it('stream URL без ID после /track/ -> if (m) FALSE', async () => {
         const noIdUrl = 'https://cdn-hls-slicer.zvuk.com/drm/track/';
         mockFetch.mockResolvedValueOnce({
             ok: true, url: '',
@@ -700,7 +700,7 @@ describe('ZvukInterceptor — дополнительные ветки (post-load
         }
     });
 
-    it('importKey с algorithm как строкой -> ?? right side (branch 160,37,1)', async () => {
+    it('importKey с algorithm как строкой -> ?? right side', async () => {
         window.__sounddlib_pending_tid = 'str-algo';
         window.__sounddlib_key_store = {};
         try {
@@ -709,14 +709,14 @@ describe('ZvukInterceptor — дополнительные ветки (post-load
         expect(true).toBe(true);
     });
 
-    it('Blob без options.type -> options?.type ?? \'\' right side (branch 223,49,1)', () => {
+    it('Blob без options.type -> options?.type ?? \'\' right side', () => {
         const longStr = 'x'.repeat(201);
         const blob = new Blob([longStr], { type: null });
         expect(blob).toBeDefined();
     });
 });
 
-describe('ZvukInterceptor — window undefined (branch 246,54,1)', () => {
+describe('ZvukInterceptor — window undefined', () => {
     it('загружается с self если window undefined', async () => {
         globalThis.BaseInterceptor = class {
             _post() {}
@@ -733,7 +733,7 @@ describe('ZvukInterceptor — window undefined (branch 246,54,1)', () => {
     });
 });
 
-describe('ZvukInterceptor — _srcDesc без setter (branch 37,3,1)', () => {
+describe('ZvukInterceptor — _srcDesc без setter', () => {
     it('загружается когда src дескриптор без setter', async () => {
         Object.defineProperty(HTMLMediaElement.prototype, 'src', {
             get() { return this._sdl_src_test ?? ''; },

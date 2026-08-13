@@ -591,7 +591,7 @@ describe('ZvukService', () => {
     });
 
     describe('_normalizeTrackGql — fallback branches', () => {
-        it('artists не массив → пустой artist; duration ?? 0 fallback', () => {
+        it('artists не массив -> пустой artist; duration ?? 0 fallback', () => {
             const service2 = new globalThis.ZvukService();
             const raw = { id: '1', title: 'T', artists: null, release: null };
             const track = service2._normalizeTrackGql(raw);

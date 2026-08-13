@@ -248,7 +248,7 @@ describe('RequestInterceptor — без authUrls', () => {
     });
 });
 
-describe('RequestInterceptor — Firefox from-extension → rateLimiter', () => {
+describe('RequestInterceptor — Firefox from-extension -> rateLimiter', () => {
     let onBeforeSendListeners = [];
 
     beforeAll(async () => {
@@ -404,7 +404,7 @@ describe('RequestInterceptor — captureAuthToken дополнительные �
         expect(globalThis.authTokenStore.zvuk).toBe('existing-token');
     });
 
-    it('isFromExtension без requestHeaders → requestHeaders?.some() ?? false', () => {
+    it('isFromExtension без requestHeaders -> requestHeaders?.some() ?? false', () => {
         globalThis.authTokenStore.zvuk = undefined;
         const listener = onBeforeSendListeners[0];
         listener({ tabId: 5 });
@@ -447,13 +447,13 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
         await import('../../background/RequestInterceptor.js');
     });
 
-    it('statusCode !== 200 → ранний выход', async () => {
+    it('statusCode !== 200 -> ранний выход', async () => {
         const listener = onCompletedListeners[0];
         await listener({ statusCode: 404, url: 'https://cdn.example.com/a1.m3u8', tabId: 1 });
         expect(globalThis.serviceRegistry.getServiceByUrl).not.toHaveBeenCalled();
     });
 
-    it('store.hasUrl(url) → ранний выход', async () => {
+    it('store.hasUrl(url) -> ранний выход', async () => {
         const url = 'https://cdn.example.com/a2.m3u8';
         globalThis.audioStore._urlIndex = new Map([[url, 'existing']]);
         const listener = onCompletedListeners[0];
@@ -462,14 +462,14 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
         expect(captureFromUrl).not.toHaveBeenCalled();
     });
 
-    it('tabId <= 0 → fetchTabMeta ранний выход', async () => {
+    it('tabId <= 0 -> fetchTabMeta ранний выход', async () => {
         captureFromUrl.mockReturnValueOnce({ type: 'hls', url: 'https://cdn.example.com/a3.m3u8', qualities: null });
         const listener = onCompletedListeners[0];
         await listener({ statusCode: 200, url: 'https://cdn.example.com/a3.m3u8', tabId: 0 });
         expect(tabsSendMessage).not.toHaveBeenCalled();
     });
 
-    it('metaResp null → не обновляет meta', async () => {
+    it('metaResp null -> не обновляет meta', async () => {
         captureFromUrl.mockReturnValueOnce({ type: 'hls', url: 'https://cdn.example.com/a4.m3u8', qualities: null });
         tabsSendMessage.mockResolvedValueOnce(null);
         const listener = onCompletedListeners[0];
@@ -477,7 +477,7 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
         expect(true).toBe(true);
     });
 
-    it('metaResp.ok true но title/artist оба null → нет updateMeta', async () => {
+    it('metaResp.ok true но title/artist оба null -> нет updateMeta', async () => {
         captureFromUrl.mockReturnValueOnce({ type: 'hls', url: 'https://cdn.example.com/a5.m3u8', qualities: null });
         tabsSendMessage.mockResolvedValueOnce({ ok: true, meta: { title: null, artist: null } });
         const listener = onCompletedListeners[0];
@@ -485,7 +485,7 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
         expect(true).toBe(true);
     });
 
-    it('stored.meta undefined и url null → || fallbacks', async () => {
+    it('stored.meta undefined и url null -> || fallbacks', async () => {
         captureFromUrl.mockReturnValueOnce({ type: 'hls', url: null, qualities: null });
         const listener = onCompletedListeners[0];
         await listener({ statusCode: 200, url: 'https://cdn.example.com/a6.m3u8', tabId: 0 });
@@ -496,14 +496,14 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
         }));
     });
 
-    it('getServiceByUrl null → ранний выход', async () => {
+    it('getServiceByUrl null -> ранний выход', async () => {
         globalThis.serviceRegistry.getServiceByUrl.mockReturnValueOnce(null);
         const listener = onCompletedListeners[0];
         await listener({ statusCode: 200, url: 'https://cdn.example.com/a7.m3u8', tabId: 1 });
         expect(globalThis.fetch).not.toHaveBeenCalledWith('https://cdn.example.com/a7.m3u8', expect.any(Object));
     });
 
-    it('res.ok false → ранний выход', async () => {
+    it('res.ok false -> ранний выход', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403 });
         const listener = onCompletedListeners[0];
         const prevCallCount = captureFromUrl.mock.calls.length;
@@ -511,7 +511,7 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
         expect(captureFromUrl.mock.calls.length).toBe(prevCallCount);
     });
 
-    it('captureFromUrl null → ранний выход', async () => {
+    it('captureFromUrl null -> ранний выход', async () => {
         captureFromUrl.mockReturnValueOnce(null);
         globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: vi.fn().mockResolvedValue('') });
         const listener = onCompletedListeners[0];
@@ -520,7 +520,7 @@ describe('RequestInterceptor — handleCapturedUrl ветки', () => {
     });
 });
 
-describe('RequestInterceptor — handleCapturedUrl Firefox → credentials include', () => {
+describe('RequestInterceptor — handleCapturedUrl Firefox -> credentials include', () => {
     let onCompletedListeners = [];
 
     beforeAll(async () => {
@@ -600,7 +600,7 @@ describe('RequestInterceptor — getAllAuthUrls с authUrls null', () => {
         await import('../../background/RequestInterceptor.js');
     });
 
-    it('i.authUrls null → || [] fallback при вызове getAllAuthUrls', () => {
+    it('i.authUrls null -> || [] fallback при вызове getAllAuthUrls', () => {
         expect(true).toBe(true);
     });
 });
@@ -623,7 +623,7 @@ describe('RequestInterceptor — getAllAuthUrls serviceRequestInterceptors null'
         await import('../../background/RequestInterceptor.js');
     });
 
-    it('serviceRequestInterceptors null → ?? [] fallback', () => {
+    it('serviceRequestInterceptors null -> ?? [] fallback', () => {
         expect(true).toBe(true);
     });
 });
@@ -653,7 +653,7 @@ describe('RequestInterceptor — setupServiceInterceptors без getBrowserEnv',
     });
 });
 
-describe('RequestInterceptor — notifyPopup reject → catch callback (anonymous_11)', () => {
+describe('RequestInterceptor — notifyPopup reject -> catch callback (anonymous_11)', () => {
     let onCompletedListeners = [];
 
     beforeAll(async () => {
@@ -717,7 +717,7 @@ describe('RequestInterceptor — setupServiceCapture capturePatterns null', () =
         await import('../../background/RequestInterceptor.js');
     });
 
-    it('capturePatterns null → || [] fallback → не регистрирует listener (line 104)', () => {
+    it('capturePatterns null -> || [] fallback -> не регистрирует listener', () => {
         expect(true).toBe(true);
     });
 });

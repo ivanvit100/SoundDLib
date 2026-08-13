@@ -48,7 +48,7 @@ describe('MessageRouter — IIFE без getExtensionApi', () => {
     });
 });
 
-describe('MessageRouter — IIFE chrome fallback (branch 16,1,1)', () => {
+describe('MessageRouter — IIFE chrome fallback', () => {
     it('загружается с globalThis.chrome если browser не определён', async () => {
         const addListenerMock = vi.fn();
         const mockChromeApi = {
@@ -88,7 +88,7 @@ describe('MessageRouter — IIFE chrome fallback (branch 16,1,1)', () => {
     });
 });
 
-describe('MessageRouter — IIFE null fallback (branch 16,1,2)', () => {
+describe('MessageRouter — IIFE null fallback', () => {
     it('browserAPI === null если нет ни browser ни chrome', async () => {
         const orig = {
             getExtensionApi: globalThis.getExtensionApi,

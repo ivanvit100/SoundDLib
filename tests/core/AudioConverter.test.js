@@ -85,7 +85,7 @@ describe('AudioConverter', () => {
                 .rejects.toThrow(/Unsupported/);
         });
 
-        it('возвращает inputBuffer для m4a → aac пассивного пути', async () => {
+        it('возвращает inputBuffer для m4a -> aac пассивного пути', async () => {
             const buf = new ArrayBuffer(5000);
             const result = await converter.convert(buf, 'audio/mp4', 'aac', () => {});
             expect(result).toBe(buf);
@@ -135,7 +135,7 @@ describe('AudioConverter', () => {
             expect(mockFFmpeg.setProgress).not.toHaveBeenCalled();
         });
 
-        it('возвращает inputBuffer для x-m4a → aac (branch inputExt === m4a, line 106)', async () => {
+        it('возвращает inputBuffer для x-m4a -> aac', async () => {
             const buf = new ArrayBuffer(5000);
             const onProgress = vi.fn();
             const result = await converter.convert(buf, 'audio/x-m4a', 'aac', onProgress);

@@ -471,7 +471,7 @@ describe('PlaylistManager', () => {
     });
 
     describe('_fetchTrackBuffer — sort comparator (anonymous_12) и onSegment null fallback (anonymous_13)', () => {
-        it('sort comparator вызывается при 2+ qualities, onSegment=null → fallback () => {}', async () => {
+        it('sort comparator вызывается при 2+ qualities, onSegment=null -> fallback () => {}', async () => {
             const mgr = new globalThis.PlaylistManager();
             const api = makeApi({
                 probe: {
@@ -590,6 +590,35 @@ describe('PlaylistManager', () => {
             tracks[0].streamUrl = 'https://cdn.example.com/audio.mp3';
             const result = await mgr.downloadAllAsZip(tracks, 'mp3', makeConverter(), '', makeService());
             expect(result.done).toBe(1);
+        });
+    });
+
+    describe('downloadAllAsZip — финальные чанки из zip.end() записываются в writable', () => {
+        it('for...of pendingChunks в if(writable) выполняется когда zip.end() генерирует чанк', async () => {
+            const savedFflate = globalThis.fflate;
+            globalThis.fflate = {
+                Zip: class {
+                    constructor(cb) { this._cb = cb; }
+                    add(deflate) { deflate._zip = this; }
+                    end() { this._cb(null, new Uint8Array([9, 8, 7])); }
+                },
+                ZipDeflate: class {
+                    constructor(name, opts) { this.name = name; }
+                    push(data, final) {}
+                }
+            };
+            const mockWritable = { write: vi.fn(), close: vi.fn() };
+            const mockHandle = { createWritable: vi.fn().mockResolvedValue(mockWritable) };
+            globalThis.showSaveFilePicker = vi.fn().mockResolvedValue(mockHandle);
+            globalThis.getExtensionApi = () => makeApi();
+
+            const mgr = new globalThis.PlaylistManager();
+            const tracks = [{ id: '1', title: 'T', artist: 'A', streamUrl: 'https://cdn.example.com/a.mp3' }];
+            await mgr.downloadAllAsZip(tracks, 'mp3', makeConverter(), 'PL', makeService());
+
+            globalThis.fflate = savedFflate;
+            globalThis.showSaveFilePicker = undefined;
+            expect(mockWritable.write).toHaveBeenCalled();
         });
     });
 

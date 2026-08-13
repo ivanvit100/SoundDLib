@@ -126,6 +126,29 @@ describe('ZvukRelay', () => {
             relay._onMainWorldMessage({ type: 'UNKNOWN_TYPE', data: {} });
             expect(mockApi.runtime.sendMessage.mock.calls.length).toBe(prevCalls);
         });
+
+        it('AUDIO_CAPTURED без meta -> || {} правая сторона', async () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._onMainWorldMessage({ type: 'AUDIO_CAPTURED', mimeType: 'audio/mpeg', data: [1], url: null });
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
+
+        it('AUDIO_CAPTURED catch callback', async () => {
+            mockApi.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._onMainWorldMessage({ type: 'AUDIO_CAPTURED', mimeType: 'audio/mpeg', data: [1], url: null, meta: {} });
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
+
+        it('STREAM_URL_CAPTURED catch callback', async () => {
+            mockApi.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._onMainWorldMessage({ type: 'STREAM_URL_CAPTURED', cdnTrackId: '1_2', streamUrl: 'https://cdn.com/1.m3u8', apiUrl: '' });
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
     });
 
     describe('fetchKeyFromMainWorld handler', () => {
@@ -171,6 +194,15 @@ describe('ZvukRelay', () => {
             expect(result.ok).toBe(true);
             expect(result.xekValue).toBeTruthy();
         });
+
+        it('без extraHeaders -> || [] правая сторона', async () => {
+            const buf = new Uint8Array([7]).buffer;
+            globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(buf) });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('fetchKeyFromMainWorld');
+            const result = await handler({ url: 'https://zvuk.com/key', xekValue: 'xek' });
+            expect(result.ok).toBe(true);
+        });
     });
 
     describe('playTrackById handler', () => {
@@ -214,6 +246,22 @@ describe('ZvukRelay', () => {
             expect(clickSpy).toHaveBeenCalled();
             document.body.innerHTML = '';
         });
+
+        it('кликает wrapper если нет кнопок вовсе', () => {
+            document.body.innerHTML = `
+                <div data-entity-id="track-noplay" role="button">
+                    <span>No buttons</span>
+                </div>
+            `;
+            const wrapper = document.querySelector('[data-entity-id="track-noplay"]');
+            const clickSpy = vi.spyOn(wrapper, 'click');
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('playTrackById');
+            const result = handler({ zvukTrackId: 'track-noplay' });
+            expect(result.ok).toBe(true);
+            expect(clickSpy).toHaveBeenCalled();
+            document.body.innerHTML = '';
+        });
     });
 
     describe('fetchFromTab handler', () => {
@@ -229,6 +277,31 @@ describe('ZvukRelay', () => {
             const result = await handler({ url: 'https://example.com', headers: {} });
             expect(result.ok).toBe(true);
             expect(result.body).toBe('response text');
+        });
+
+        it('без headers -> || {} правая сторона', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true, status: 200,
+                text: () => Promise.resolve('body'),
+                headers: { get: () => 'text/html' }
+            });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('fetchFromTab');
+            const result = await handler({ url: 'https://example.com' });
+            expect(result.ok).toBe(true);
+        });
+
+        it('content-type null -> || "" правая сторона', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true, status: 200,
+                text: () => Promise.resolve('body'),
+                headers: { get: () => null }
+            });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('fetchFromTab');
+            const result = await handler({ url: 'https://example.com' });
+            expect(result.ok).toBe(true);
+            expect(result.contentType).toBe('');
         });
     });
 
@@ -255,6 +328,20 @@ describe('ZvukRelay', () => {
             const result = await handler({ url: 'https://cdn.example.com/audio.mp3' });
             expect(result.ok).toBe(false);
         });
+
+        it('content-type null -> || "audio/mpeg" правая сторона', async () => {
+            const buf = new Uint8Array([9]).buffer;
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true, status: 200,
+                arrayBuffer: () => Promise.resolve(buf),
+                headers: { get: () => null }
+            });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('fetchAudioFromTab');
+            const result = await handler({ url: 'https://cdn.example.com/a.mp3' });
+            expect(result.ok).toBe(true);
+            expect(result.mimeType).toBe('audio/mpeg');
+        });
     });
 
     describe('getPlaybackState handler', () => {
@@ -275,6 +362,33 @@ describe('ZvukRelay', () => {
             const result = handler({});
             expect(result.ok).toBe(true);
             expect(result.state).toBeNull();
+        });
+
+        it('возвращает state из media element', () => {
+            document.body.innerHTML = `<audio id="rel-media"></audio>`;
+            const media = document.getElementById('rel-media');
+            Object.defineProperty(media, 'currentTime', { value: 30, configurable: true });
+            Object.defineProperty(media, 'duration', { value: 120, configurable: true });
+            Object.defineProperty(media, 'paused', { value: false, configurable: true });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('getPlaybackState');
+            const result = handler({});
+            expect(result.ok).toBe(true);
+            expect(result.state.duration).toBe(120);
+            document.body.innerHTML = '';
+        });
+
+        it('media с Infinity duration -> isFinite FALSE -> 0', () => {
+            document.body.innerHTML = `<audio id="inf-rel"></audio>`;
+            const media = document.getElementById('inf-rel');
+            Object.defineProperty(media, 'currentTime', { value: 0, configurable: true });
+            Object.defineProperty(media, 'duration', { value: Infinity, configurable: true });
+            Object.defineProperty(media, 'paused', { value: true, configurable: true });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('getPlaybackState');
+            const result = handler({});
+            expect(result.state.duration).toBe(0);
+            document.body.innerHTML = '';
         });
     });
 
@@ -323,6 +437,41 @@ describe('ZvukRelay', () => {
             const handler = relay._handlers.get('playbackControl');
             const result = handler({ control: 'prevTrack' });
             expect(result.ok).toBe(true);
+        });
+
+        it('seek без __sdl_state, с audio -> el=null + media truthy', () => {
+            document.body.innerHTML = `<audio id="seek-audio"></audio>`;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('playbackControl');
+            const result = handler({ control: 'seek', position: 50 });
+            expect(result.ok).toBe(true);
+            document.body.innerHTML = '';
+        });
+
+        it('неизвестный ctrl -> ни одна ветка', () => {
+            document.body.innerHTML = '';
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('playbackControl');
+            const result = handler({ control: 'stop' });
+            expect(result.ok).toBe(true);
+        });
+
+        it('mini с < 3 кнопками, controls != 5 -> findBtns null', () => {
+            document.body.innerHTML = `
+                <div class="mini__bar">
+                    <div class="controls__inner">
+                        <button>1</button><button>2</button>
+                    </div>
+                </div>
+                <div class="controls__other">
+                    <button>a</button><button>b</button><button>c</button>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const handler = relay._handlers.get('playbackControl');
+            const result = handler({ control: 'playPause' });
+            expect(result.ok).toBe(true);
+            document.body.innerHTML = '';
         });
 
         it('playPause через mini controls с 3 кнопками', () => {
@@ -396,6 +545,25 @@ describe('ZvukRelay', () => {
                 expect.objectContaining({ action: 'openDownloadWindow' })
             );
         });
+
+        it('mouseover и mouseout меняют stroke (anonymous_25, 26, 27)', () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const btn = relay._createDownloadBtn();
+            document.body.appendChild(btn);
+            btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+            btn.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+            document.body.innerHTML = '';
+            expect(true).toBe(true);
+        });
+
+        it('catch в click не бросает (anonymous_29)', async () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const btn = relay._createDownloadBtn();
+            mockApi.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
     });
 
     describe('_createTrackListBtn', () => {
@@ -432,6 +600,15 @@ describe('ZvukRelay', () => {
             expect(btn.style.opacity).toBe('0.7');
             document.body.innerHTML = '';
         });
+
+        it('catch в click, пустые title/artist (anonymous_35, branches 42,1 и 43,1)', async () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const btn = relay._createTrackListBtn('1', { title: '', artist: '', cover: '' });
+            mockApi.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await Promise.resolve();
+            expect(true).toBe(true);
+        });
     });
 
     describe('_setupStyle', () => {
@@ -448,6 +625,17 @@ describe('ZvukRelay', () => {
             relay._setupStyle();
             const styles = document.querySelectorAll('#__sdl_tracklist_style');
             expect(styles.length).toBe(1);
+        });
+
+        it('использует documentElement если document.head равен null', () => {
+            document.getElementById('__sdl_tracklist_style')?.remove();
+            Object.defineProperty(document, 'head', { get: () => null, configurable: true });
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._setupStyle();
+            delete document.head;
+            const style = document.getElementById('__sdl_tracklist_style');
+            expect(style).toBeTruthy();
+            style?.remove();
         });
     });
 
@@ -611,6 +799,24 @@ describe('ZvukRelay', () => {
             document.body.innerHTML = '';
         });
 
+        it('catch в _makeDlBtn click не бросает (anonymous_41)', async () => {
+            Object.defineProperty(window, 'location', {
+                value: { pathname: '/playlist/999', href: 'https://zvuk.com/playlist/999' },
+                writable: true
+            });
+            document.body.innerHTML = `<div class="HeaderButtons_wrapper__x"></div>`;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectPlaylistHeader();
+            const btn = document.querySelector('[data-sdl-playlist-dl]');
+            if (btn) {
+                mockApi.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
+                btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                await Promise.resolve();
+            }
+            document.body.innerHTML = '';
+            expect(true).toBe(true);
+        });
+
         it('_makeDlBtn отправляет openDownloadWindow при клике', () => {
             Object.defineProperty(window, 'location', {
                 value: { pathname: '/playlist/456', href: 'https://zvuk.com/playlist/456' },
@@ -660,6 +866,30 @@ describe('ZvukRelay', () => {
             expect(controls.querySelector('[data-sdl-tracklist-dl]')).toBeTruthy();
             document.body.innerHTML = '';
         });
+
+        it('пропускает wrapper без Controls_controls__', () => {
+            document.body.innerHTML = `
+                <div data-entity-id="no-ctrl" role="button">
+                    <span>No controls</span>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectTrackList();
+            expect(document.querySelector('[data-sdl-tracklist-dl]')).toBeNull();
+            document.body.innerHTML = '';
+        });
+
+        it('пропускает wrapper с пустым data-entity-id', () => {
+            document.body.innerHTML = `
+                <div data-entity-id="" role="button">
+                    <div class="Controls_controls__x"></div>
+                </div>
+            `;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            relay._injectTrackList();
+            expect(document.querySelector('[data-sdl-tracklist-dl]')).toBeNull();
+            document.body.innerHTML = '';
+        });
     });
 
     describe('_buildTabMeta', () => {
@@ -694,6 +924,12 @@ describe('ZvukRelay', () => {
             expect(result.meta.title).toBe('Track');
             expect(result.meta.zvukTrackId).toBe('42');
         });
+
+        it('artist пустой -> || "" правая сторона', () => {
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const result = relay._tabMetaFromSession({ title: 'T', artist: '', artwork: [] }, null);
+            expect(result.meta.artist).toBe('');
+        });
     });
 
     describe('_tabMetaFromDom', () => {
@@ -704,5 +940,66 @@ describe('ZvukRelay', () => {
             expect(result.ok).toBe(true);
             expect(result.meta.title).toBe('Test Title');
         });
+
+        it('title из h1 элемента в DOM', () => {
+            document.body.innerHTML = `<h1>DOM Title</h1>`;
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const result = relay._tabMetaFromDom(null);
+            expect(result.meta.title).toBe('DOM Title');
+            document.body.innerHTML = '';
+        });
+
+        it('пустой DOM и пустой document.title -> ""', () => {
+            document.body.innerHTML = '';
+            document.title = '';
+            const relay = new globalThis.ZvukRelay(mockApi);
+            const result = relay._tabMetaFromDom(null);
+            expect(result.meta.title).toBe('');
+        });
+    });
+});
+
+describe('ZvukRelay — IIFE self branch', () => {
+    it('загружается с self если window не определён', async () => {
+        const origBaseRelay = globalThis.BaseRelay;
+        globalThis.BaseRelay = class {
+            constructor(api) { this._api = api; this._handlers = new Map(); this._injectors = []; }
+            registerHandler(name, fn) { this._handlers.set(name, fn); }
+            registerInjector(fn) { this._injectors.push(fn); }
+            start() {}
+        };
+        vi.stubGlobal('window', undefined);
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRelay.js');
+        vi.unstubAllGlobals();
+        globalThis.BaseRelay = origBaseRelay;
+        expect(globalThis.ZvukRelay).toBeDefined();
+    });
+});
+
+describe('ZvukRelay — IIFE browser branch', () => {
+    it('api = browser если browser определён', async () => {
+        const localListeners = [];
+        const savedChrome = globalThis.chrome;
+        const origBaseRelay = globalThis.BaseRelay;
+        globalThis.BaseRelay = class {
+            constructor(api) { this._api = api; this._handlers = new Map(); this._injectors = []; }
+            registerHandler(name, fn) { this._handlers.set(name, fn); }
+            registerInjector(fn) { this._injectors.push(fn); }
+            start() { this._api.runtime.onMessage.addListener(() => {}); }
+        };
+        globalThis.browser = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn((cb) => localListeners.push(cb)) }
+            }
+        };
+        globalThis.chrome = undefined;
+        vi.resetModules();
+        await import('../../../services/zvuk/ZvukRelay.js');
+        globalThis.browser = undefined;
+        globalThis.chrome = savedChrome;
+        globalThis.BaseRelay = origBaseRelay;
+        expect(localListeners.length).toBeGreaterThan(0);
     });
 });

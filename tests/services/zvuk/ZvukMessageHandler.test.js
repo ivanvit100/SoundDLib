@@ -103,7 +103,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('text не начинается с #EXTM3U → throw (branch 119,25,0)', async () => {
+        it('text не начинается с #EXTM3U -> throw', async () => {
             const origFetch = globalThis.fetch;
             const origRegistry = globalThis.serviceRegistry;
             globalThis.fetch = vi.fn().mockResolvedValue({
@@ -124,7 +124,7 @@ describe('ZvukMessageHandler', () => {
             globalThis.serviceRegistry = origRegistry;
         });
 
-        it('entry без qualities → throw (branch 121,26,0)', async () => {
+        it('entry без qualities -> throw', async () => {
             const origFetch = globalThis.fetch;
             const origRegistry = globalThis.serviceRegistry;
             globalThis.fetch = vi.fn().mockResolvedValue({
@@ -342,6 +342,39 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
+        it('func: for loop по hdrs заполняет headers (statement line 60)', async () => {
+            const origSend = mockApi.tabs.sendMessage;
+            const origExec = mockApi.scripting.executeScript;
+            const origFetch = globalThis.fetch;
+            globalThis.encryptedKeyStore = { 'hdrs1': { headers: [{ name: 'x-custom', value: 'val1' }] } };
+            mockApi.tabs.sendMessage = vi.fn().mockResolvedValue({ ok: false });
+            mockApi.scripting.executeScript = vi.fn().mockImplementation(async ({ func, args }) => {
+                if (func) {
+                    globalThis.fetch = vi.fn().mockResolvedValue({
+                        ok: true,
+                        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4))
+                    });
+                    try {
+                        const result = await func(...args);
+                        return [{ result }];
+                    } finally {
+                        globalThis.fetch = origFetch;
+                    }
+                }
+                return [{ result: null }];
+            });
+            try {
+                const resp = await callHandler('fetchKeyFromTab', {
+                    url: 'https://zvuk.com/keyserver/api/v1/key?track_id=hdrs1'
+                });
+                expect(resp.ok).toBe(true);
+            } finally {
+                mockApi.tabs.sendMessage = origSend;
+                mockApi.scripting.executeScript = origExec;
+                globalThis.encryptedKeyStore = {};
+            }
+        });
+
         it('tryExecuteScript бросает executeScript — fallback', async () => {
             const origSend = mockApi.tabs.sendMessage;
             const origExec = mockApi.scripting.executeScript;
@@ -372,7 +405,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('tabsRoot = tabsSub = null → || [] правая сторона (branches 89,19,1 и 89,20,1)', async () => {
+        it('tabsRoot = tabsSub = null -> || [] правая сторона', async () => {
             mockApi.tabs.query = vi.fn().mockResolvedValue(null);
             const resp = await callHandler('fetchKeyFromTab', {
                 url: 'https://zvuk.com/keyserver/api/v1/key?track_id=nulltabs99'
@@ -381,7 +414,7 @@ describe('ZvukMessageHandler', () => {
             mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 10 }]);
         });
 
-        it('tryNativeKey xek=undefined → xek?.value ?? "" правая сторона (branch 22,5,1)', async () => {
+        it('tryNativeKey xek=undefined -> xek?.value ?? "" правая сторона', async () => {
             globalThis.nativeKeyStore = { 'nnk1': [1, 2, 3] };
             globalThis.encryptedKeyStore = {};
             mockApi.tabs.query = vi.fn().mockResolvedValue([{ id: 10 }]);
@@ -394,7 +427,7 @@ describe('ZvukMessageHandler', () => {
             globalThis.encryptedKeyStore = {};
         });
 
-        it('tryContentScript xekValue falsy, xek.value есть → branches 32,8,0 и 32,9,0', async () => {
+        it('tryContentScript xekValue falsy, xek.value есть -> branches 32,8,0 и 32,9,0', async () => {
             globalThis.nativeKeyStore = {};
             globalThis.encryptedKeyStore = { 'cs1': { headers: [{ name: 'x-encrypted-key', value: 'thexek' }] } };
             const origSend = mockApi.tabs.sendMessage;
@@ -408,7 +441,7 @@ describe('ZvukMessageHandler', () => {
             globalThis.encryptedKeyStore = {};
         });
 
-        it('tryContentScript xekValue falsy, xek=undefined → xek?.value ?? "" правая сторона (branch 32,9,1)', async () => {
+        it('tryContentScript xekValue falsy, xek=undefined -> xek?.value ?? "" правая сторона', async () => {
             globalThis.nativeKeyStore = {};
             globalThis.encryptedKeyStore = {};
             const origSend = mockApi.tabs.sendMessage;
@@ -475,7 +508,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('text не начинается с #EXTM3U → continue (branch 181,36,0)', async () => {
+        it('text не начинается с #EXTM3U -> continue', async () => {
             const origFetch = globalThis.fetch;
             globalThis.fetch = vi.fn().mockResolvedValue({
                 ok: true,
@@ -486,7 +519,7 @@ describe('ZvukMessageHandler', () => {
             globalThis.fetch = origFetch;
         });
 
-        it('без meta → if(meta) FALSE, stored?.meta || {} правая сторона (branches 188,38,1 и 193,39,1)', async () => {
+        it('без meta -> if(meta) FALSE, stored?.meta || {} правая сторона', async () => {
             const origFetch = globalThis.fetch;
             const origRegistry = globalThis.serviceRegistry;
             globalThis.fetch = vi.fn().mockResolvedValue({
@@ -510,7 +543,7 @@ describe('ZvukMessageHandler', () => {
             globalThis.serviceRegistry = origRegistry;
         });
 
-        it('entry без qualities → qualities=null (branches 194,40,1 и 198,41,1)', async () => {
+        it('entry без qualities -> qualities=null', async () => {
             const origFetch = globalThis.fetch;
             const origRegistry = globalThis.serviceRegistry;
             globalThis.fetch = vi.fn().mockResolvedValue({
@@ -534,7 +567,7 @@ describe('ZvukMessageHandler', () => {
     });
 
     describe('ZvukMessageHandler — IIFE ветки (fresh loads)', () => {
-        it('getExtensionApi не функция, browser=mockApi → IIFE branches 12,0,1 + 14,1,0 + 15,2,1 + 114,23,0 + 176,34,0', async () => {
+        it('getExtensionApi не функция, browser=mockApi -> IIFE branches 12,0,1 + 14,1,0 + 15,2,1 + 114,23,0 + 176,34,0', async () => {
             const origGetExtApi = globalThis.getExtensionApi;
             const origGetBrowserEnv = globalThis.getBrowserEnv;
             const origBrowser = globalThis.browser;
@@ -583,7 +616,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('browser=undefined, chrome=mockApi → branch 14,1,1', async () => {
+        it('browser=undefined, chrome=mockApi -> branch 14,1,1', async () => {
             const origGetExtApi = globalThis.getExtensionApi;
             const origBrowser = globalThis.browser;
             const origChrome = globalThis.chrome;
@@ -603,7 +636,7 @@ describe('ZvukMessageHandler', () => {
             }
         });
 
-        it('browser=null, chrome=null, serviceMessageHandlers не задан → branches 14,1,2 + 18,3,0', async () => {
+        it('browser=null, chrome=null, serviceMessageHandlers не задан -> branches 14,1,2 + 18,3,0', async () => {
             const origGetExtApi = globalThis.getExtensionApi;
             const origBrowser = globalThis.browser;
             const origChrome = globalThis.chrome;

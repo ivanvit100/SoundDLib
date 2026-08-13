@@ -630,21 +630,21 @@ describe('MessageRouter — getLatestTrack/getTrack без type', () => {
 });
 
 describe('MessageRouter — fetchFromTab дополнительные ветки', () => {
-    it('tabsRootA/tabsSubA null → ||[] fallback, sender tab используется', async () => {
+    it('tabsRootA/tabsSubA null -> ||[] fallback, sender tab используется', async () => {
         api.tabs.query.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
         api.tabs.sendMessage.mockResolvedValueOnce({ ok: true, body: 'data', status: 200 });
         const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' }, { tab: { id: 55 } });
         expect(resp).toBeTruthy();
     });
 
-    it('msg без headers → {} дефолт', async () => {
+    it('msg без headers -> {} дефолт', async () => {
         api.tabs.query.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
         api.tabs.sendMessage.mockResolvedValueOnce({ ok: true, body: 'data', status: 200 });
         const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' });
         expect(resp.ok).toBe(true);
     });
 
-    it('result null → ?? {ok:false} дефолт', async () => {
+    it('result null -> ?? {ok:false} дефолт', async () => {
         api.tabs.query.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
         api.tabs.sendMessage.mockResolvedValueOnce(null);
         const resp = await dispatch({ action: 'fetchFromTab', url: 'https://example.com' });
@@ -653,7 +653,7 @@ describe('MessageRouter — fetchFromTab дополнительные ветки
 });
 
 describe('MessageRouter — fetchAudioTrack дополнительные ветки', () => {
-    it('authTokenStore.zvuk существует → используется Bearer токен', async () => {
+    it('authTokenStore.zvuk существует -> используется Bearer токен', async () => {
         globalThis.authTokenStore = { zvuk: 'test-bearer-token' };
         api.tabs.query.mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
         api.tabs.sendMessage.mockResolvedValueOnce({ ok: true, data: [1, 2, 3], mimeType: 'audio/mpeg' });
@@ -665,7 +665,7 @@ describe('MessageRouter — fetchAudioTrack дополнительные вет�
         }
     });
 
-    it('нет tabId → прямой fetch, mimeType || audio/mpeg', async () => {
+    it('нет tabId -> прямой fetch, mimeType || audio/mpeg', async () => {
         api.tabs.query.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
         globalThis.fetch = vi.fn().mockResolvedValue({
             ok: true,

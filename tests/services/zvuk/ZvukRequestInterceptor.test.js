@@ -605,7 +605,7 @@ describe('ZvukRequestInterceptor — setupEarlyInjection func branches', () => {
         expect(true).toBe(true);
     });
 
-    it('xek_store null -> || {} right side (branch 125,25,1)', async () => {
+    it('xek_store null -> || {} right side', async () => {
         window.__sounddlib_xek_store = null;
         await window.fetch('https://zvuk.com/keyserver/api/v1/key?track_id=nullst3', {
             headers: { 'x-encrypted-key': 'v3' }
@@ -613,7 +613,7 @@ describe('ZvukRequestInterceptor — setupEarlyInjection func branches', () => {
         expect(window.__sounddlib_xek_store).toBeDefined();
     });
 
-    it('scan с числовым значением -> else if FALSE (branch 142,31,1)', async () => {
+    it('scan с числовым значением -> else if FALSE', async () => {
         const streamUrl = 'https://cdn-hls-slicer.zvuk.com/drm/track/30/m.m3u8';
         mockFetch.mockResolvedValueOnce({
             ok: true, url: '',
@@ -627,7 +627,7 @@ describe('ZvukRequestInterceptor — setupEarlyInjection func branches', () => {
         expect(true).toBe(true);
     });
 
-    it('stream URL без ID -> if (m) FALSE (branch 148,33,1)', async () => {
+    it('stream URL без ID -> if (m) FALSE', async () => {
         const noIdUrl = 'https://cdn-hls-slicer.zvuk.com/drm/track/';
         mockFetch.mockResolvedValueOnce({
             ok: true, url: '',
@@ -694,7 +694,7 @@ describe('ZvukRequestInterceptor — importKey ArrayBuffer (fresh load со spy)
         expect(true).toBe(true);
     });
 
-    it('importKey алгоритм как строка -> ?? right side (branch 180,38,1)', async () => {
+    it('importKey алгоритм как строка -> ?? right side', async () => {
         window.__sounddlib_pending_tid = 'str-algo3';
         window.__sounddlib_key_store = {};
         await crypto.subtle.importKey('raw', new Uint8Array(16).fill(3), 'AES-CBC', false, ['decrypt']);

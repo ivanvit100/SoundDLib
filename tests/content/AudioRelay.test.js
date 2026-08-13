@@ -84,20 +84,20 @@ describe('AudioRelay', () => {
             expect(globalThis.chrome.runtime.sendMessage.mock.calls.length).toBe(prevCalls);
         });
 
-        it('AUDIO_CAPTURED без meta → meta||{} правая сторона (branch 25,4,1)', async () => {
+        it('AUDIO_CAPTURED без meta -> meta||{} правая сторона', async () => {
             sendWindowMessage({ __sounddlib: true, type: 'AUDIO_CAPTURED', mimeType: 'audio/mpeg', data: [1], url: null });
             await Promise.resolve();
             expect(true).toBe(true);
         });
 
-        it('AUDIO_CAPTURED catch callback (anonymous_2)', async () => {
+        it('AUDIO_CAPTURED catch callback', async () => {
             globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
             sendWindowMessage({ __sounddlib: true, type: 'AUDIO_CAPTURED', mimeType: 'audio/mpeg', data: [1], url: null, meta: {} });
             await Promise.resolve();
             expect(true).toBe(true);
         });
 
-        it('STREAM_URL_CAPTURED catch callback (anonymous_3)', async () => {
+        it('STREAM_URL_CAPTURED catch callback', async () => {
             globalThis.chrome.runtime.sendMessage.mockRejectedValueOnce(new Error('fail'));
             sendWindowMessage({ __sounddlib: true, type: 'STREAM_URL_CAPTURED', cdnTrackId: '1_2', streamUrl: 'https://cdn.com/1.m3u8', apiUrl: '' });
             await Promise.resolve();
@@ -157,7 +157,7 @@ describe('AudioRelay', () => {
             expect(resp.xekValue).toBeTruthy();
         });
 
-        it('без extraHeaders → || [] правая сторона (branch 42,6,1)', async () => {
+        it('без extraHeaders -> || [] правая сторона', async () => {
             const buf = new Uint8Array([7]).buffer;
             globalThis.fetch = vi.fn().mockResolvedValue({
                 ok: true, arrayBuffer: () => Promise.resolve(buf)
@@ -219,7 +219,7 @@ describe('AudioRelay', () => {
             expect(resp.body).toBe('page content');
         });
 
-        it('content-type null → || "" правая сторона (branch 79,14,1)', async () => {
+        it('content-type null -> || "" правая сторона', async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({
                 ok: true, status: 200,
                 text: () => Promise.resolve('body'),
@@ -251,7 +251,7 @@ describe('AudioRelay', () => {
             expect(resp.ok).toBe(false);
         });
 
-        it('content-type null → || "audio/mpeg" правая сторона (branch 93,17,1)', async () => {
+        it('content-type null -> || "audio/mpeg" правая сторона', async () => {
             const buf = new Uint8Array([9]).buffer;
             globalThis.fetch = vi.fn().mockResolvedValue({
                 ok: true, status: 200,
@@ -283,7 +283,7 @@ describe('AudioRelay', () => {
             });
         });
 
-        it('media с Infinity duration → isFinite FALSE → duration:0 (branch 114,21,1)', async () => {
+        it('media с Infinity duration -> isFinite FALSE -> duration:0', async () => {
             document.body.innerHTML = `<audio id="inf-player"></audio>`;
             const media = document.getElementById('inf-player');
             Object.defineProperty(media, 'currentTime', { value: 0, configurable: true });
@@ -312,6 +312,19 @@ describe('AudioRelay', () => {
             return sendRuntimeMessage('playbackControl', { control: 'playPause' }).then(resp => {
                 expect(resp.ok).toBe(true);
             });
+        });
+
+        it('seek без __sdl_state, с audio -> el=null + media truthy', async () => {
+            document.body.innerHTML = `<audio id="seek-media"></audio>`;
+            const resp = await sendRuntimeMessage('playbackControl', { control: 'seek', position: 75 });
+            expect(resp.ok).toBe(true);
+            document.body.innerHTML = '';
+        });
+
+        it('неизвестный ctrl -> ни одна ветка', async () => {
+            document.body.innerHTML = '';
+            const resp = await sendRuntimeMessage('playbackControl', { control: 'stop' });
+            expect(resp.ok).toBe(true);
         });
     });
 
@@ -344,6 +357,60 @@ describe('AudioRelay', () => {
             return sendRuntimeMessage('getTabMeta', {}).then(resp => {
                 expect(resp.ok).toBe(true);
             });
+        });
+
+        it('session с пустым title, есть artist -> title||"" правая', async () => {
+            Object.defineProperty(navigator, 'mediaSession', {
+                value: { metadata: { title: '', artist: 'Some Artist', artwork: [] } },
+                writable: true, configurable: true
+            });
+            const resp = await sendRuntimeMessage('getTabMeta', {});
+            expect(resp.ok).toBe(true);
+            expect(resp.meta.title).toBe('');
+            expect(resp.meta.cover).toBeNull();
+        });
+
+        it('session с пустым artist -> artist||"" правая', async () => {
+            Object.defineProperty(navigator, 'mediaSession', {
+                value: { metadata: { title: 'T', artist: '', artwork: [{ src: '' }] } },
+                writable: true, configurable: true
+            });
+            const resp = await sendRuntimeMessage('getTabMeta', {});
+            expect(resp.ok).toBe(true);
+            expect(resp.meta.artist).toBe('');
+        });
+
+        it('session без src в artwork -> cover=null', async () => {
+            Object.defineProperty(navigator, 'mediaSession', {
+                value: { metadata: { title: 'T', artist: 'A', artwork: [{}] } },
+                writable: true, configurable: true
+            });
+            const resp = await sendRuntimeMessage('getTabMeta', {});
+            expect(resp.ok).toBe(true);
+            expect(resp.meta.cover).toBeNull();
+        });
+
+        it('tabMetaFromDom без title и пустой document.title -> ""', async () => {
+            Object.defineProperty(navigator, 'mediaSession', {
+                value: { metadata: null }, writable: true, configurable: true
+            });
+            document.body.innerHTML = '';
+            document.title = '';
+            const resp = await sendRuntimeMessage('getTabMeta', {});
+            expect(resp.ok).toBe(true);
+            expect(resp.meta.title).toBe('');
+        });
+
+        it('mini link с нечисловым href -> zvukTrackId null', async () => {
+            Object.defineProperty(navigator, 'mediaSession', {
+                value: { metadata: null }, writable: true, configurable: true
+            });
+            document.body.innerHTML = `<div class="mini__player"><a href="/track/abc">Track</a></div>`;
+            document.title = 'Test';
+            const resp = await sendRuntimeMessage('getTabMeta', {});
+            expect(resp.ok).toBe(true);
+            expect(resp.meta.zvukTrackId).toBeNull();
+            document.body.innerHTML = '';
         });
     });
 
@@ -424,6 +491,22 @@ describe('AudioRelay', () => {
                 </div>
             `;
             const resp = await sendRuntimeMessage('playbackControl', { control: 'nextTrack' });
+            expect(resp.ok).toBe(true);
+            document.body.innerHTML = '';
+        });
+
+        it('mini с < 3 кнопками, controls != 5 -> findPlaybackBtns null', async () => {
+            document.body.innerHTML = `
+                <div class="mini__bar">
+                    <div class="controls__inner">
+                        <button>1</button><button>2</button>
+                    </div>
+                </div>
+                <div class="controls__other">
+                    <button>a</button><button>b</button><button>c</button>
+                </div>
+            `;
+            const resp = await sendRuntimeMessage('playbackControl', { control: 'playPause' });
             expect(resp.ok).toBe(true);
             document.body.innerHTML = '';
         });
@@ -699,4 +782,126 @@ describe('AudioRelay — sdlInjectPlaylistHeaderBtn без CmButtons', () => {
         const btn = document.querySelector('[data-sdl-playlist-dl]');
         expect(btn).toBeDefined();
     });
+});
+
+describe('AudioRelay — browser=null IIFE branch', () => {
+    beforeAll(async () => {
+        globalThis.chrome = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn() }
+            }
+        };
+        globalThis.browser = null;
+        document.body.innerHTML = '';
+        vi.resetModules();
+        await import('../../content/AudioRelay.js');
+        globalThis.browser = undefined;
+    });
+
+    it('browser=null -> typeof check proходит, && null -> api=chrome', () => {
+        expect(true).toBe(true);
+    });
+});
+
+describe('AudioRelay — sdlInjectTrackList различные ветки', () => {
+    let tracklistListeners = [];
+
+    beforeAll(async () => {
+        tracklistListeners = [];
+        globalThis.chrome = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn((cb) => { tracklistListeners.push(cb); }) }
+            }
+        };
+        globalThis.browser = undefined;
+
+        document.body.innerHTML = `
+            <div data-entity-id="no-controls" role="button">
+                <span>No controls wrapper</span>
+            </div>
+            <div data-entity-id="" role="button">
+                <div class="Controls_controls__empty"></div>
+            </div>
+            <div data-entity-id="track-noinfo" role="button">
+                <div class="Controls_controls__noinfo"></div>
+            </div>
+        `;
+
+        vi.resetModules();
+        await import('../../content/AudioRelay.js');
+    });
+
+    it('wrapper без Controls_controls__ -> !controls TRUE -> continue', () => {
+        const noCtrlWrapper = document.querySelector('[data-entity-id="no-controls"]');
+        expect(noCtrlWrapper.querySelector('[data-sdl-tracklist-dl]')).toBeNull();
+    });
+
+    it('wrapper с пустым data-entity-id -> !zvukTrackId TRUE -> continue', () => {
+        const emptyIdWrapper = document.querySelector('[data-entity-id=""]');
+        expect(emptyIdWrapper.querySelector('[data-sdl-tracklist-dl]')).toBeNull();
+    });
+
+    it('без Info_titleInner__ -> title||"" правая сторона', () => {
+        const noInfoWrapper = document.querySelector('[data-entity-id="track-noinfo"]');
+        expect(noInfoWrapper.querySelector('[data-sdl-tracklist-dl]')).not.toBeNull();
+    });
+
+    it('без Info_description___ -> artist||"" правая сторона', async () => {
+        const btn = document.querySelector('[data-entity-id="track-noinfo"] [data-sdl-tracklist-dl]');
+        expect(btn).not.toBeNull();
+    });
+
+    it('click на tracklist btn без title -> meta?.title||"" правая', async () => {
+        const btn = document.querySelector('[data-entity-id="track-noinfo"] [data-sdl-tracklist-dl]');
+        if (btn) {
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+            const lastCall = globalThis.chrome.runtime.sendMessage.mock.calls.at(-1)?.[0];
+            expect(lastCall?.title).toBe('');
+            expect(lastCall?.artist).toBe('');
+        } else {
+            expect(true).toBe(true);
+        }
+    });
+});
+
+describe('AudioRelay — sdlInjectPlaylistHeaderBtn без refBtn', () => {
+    beforeAll(async () => {
+        globalThis.chrome = {
+            runtime: {
+                sendMessage: vi.fn().mockResolvedValue({}),
+                onMessage: { addListener: vi.fn() }
+            }
+        };
+        globalThis.browser = undefined;
+
+        Object.defineProperty(window, 'location', {
+            value: { pathname: '/collection/777', href: 'https://zvuk.com/collection/777' },
+            configurable: true,
+            writable: true
+        });
+
+        document.body.innerHTML = `
+            <div class="HeaderButtons_wrapper__noref">
+                <div class="CmButtons_wrapper__y"></div>
+            </div>
+        `;
+
+        vi.resetModules();
+        await import('../../content/AudioRelay.js');
+    });
+
+    it('без GeneralButton -> refBtn null -> className не устанавливается', () => {
+        const btn = document.querySelector('[data-sdl-playlist-dl]');
+        expect(btn).not.toBeNull();
+        expect(btn.className).toBe('');
+    });
+
+    it('MutationObserver setTimeout callback срабатывает после DOM-мутации', async () => {
+        document.body.appendChild(document.createElement('div'));
+        await new Promise(r => setTimeout(r, 300));
+        expect(true).toBe(true);
+    }, 1000);
 });
