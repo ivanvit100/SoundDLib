@@ -212,6 +212,9 @@
                 return { buffer: new Uint8Array(resp.data).buffer, mimeType: resp.mimeType };
             }
 
+            if (typeof service.getTrackBuffer === 'function')
+                return service.getTrackBuffer(track, api, onSegment || (() => {}));
+
             const probe = await api.runtime.sendMessage({
                 action: 'resolveCdnUrl',
                 zvukId: String(track.id)

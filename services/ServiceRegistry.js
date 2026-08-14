@@ -36,6 +36,38 @@
                     'services/zvuk/ZvukRelay.js'
                 ]
             }
+        },
+        {
+            name: 'yandex',
+            matches: [
+                'https://music.yandex.ru/*',
+                'https://music.yandex.com/*',
+                'https://music.yandex.by/*',
+                'https://music.yandex.kz/*',
+                'https://music.yandex.ua/*'
+            ],
+            scripts: {
+                background: [
+                    '/services/yandex/config.js',
+                    '/services/BaseAudioService.js',
+                    '/services/yandex/YandexService.js',
+                    '/services/yandex/YandexMessageHandler.js',
+                    '/services/yandex/YandexRequestInterceptor.js'
+                ],
+                popup: [
+                    '/services/yandex/config.js',
+                    '/services/BaseAudioService.js',
+                    '/services/yandex/YandexService.js'
+                ],
+                contentMain: [
+                    'core/base/BaseInterceptor.js',
+                    'services/yandex/YandexInterceptor.js'
+                ],
+                contentIsolated: [
+                    'core/base/BaseRelay.js',
+                    'services/yandex/YandexRelay.js'
+                ]
+            }
         }
     ];
 

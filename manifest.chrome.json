@@ -31,7 +31,14 @@
 
     "host_permissions": [
         "https://zvuk.com/*",
-        "https://*.zvuk.com/*"
+        "https://*.zvuk.com/*",
+        "https://music.yandex.ru/*",
+        "https://music.yandex.com/*",
+        "https://music.yandex.by/*",
+        "https://music.yandex.kz/*",
+        "https://music.yandex.ua/*",
+        "https://storage.mds.yandex.net/*",
+        "https://strm.yandex.ru/*"
     ],
 
     "content_security_policy": {
@@ -47,8 +54,20 @@
 
     "content_scripts": [],
 
-    "web_accessible_resources": [{
-        "resources": ["lib/ffmpeg-core.js", "lib/ffmpeg-core.wasm", "lib/ffmpeg-core.worker.js", "services/zvuk/ZvukInterceptor.js"],
-        "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"]
-    }]
+    "web_accessible_resources": [
+        {
+            "resources": ["lib/ffmpeg-core.js", "lib/ffmpeg-core.wasm", "lib/ffmpeg-core.worker.js", "services/zvuk/ZvukInterceptor.js"],
+            "matches": ["https://zvuk.com/*", "https://*.zvuk.com/*"]
+        },
+        {
+            "resources": ["lib/ffmpeg-core.js", "lib/ffmpeg-core.wasm", "lib/ffmpeg-core.worker.js"],
+            "matches": [
+                "https://music.yandex.ru/*",
+                "https://music.yandex.com/*",
+                "https://music.yandex.by/*",
+                "https://music.yandex.kz/*",
+                "https://music.yandex.ua/*"
+            ]
+        }
+    ]
 }
